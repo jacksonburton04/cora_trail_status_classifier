@@ -4,19 +4,19 @@ import requests
 import json
 import time
 import warnings
-# import joblib
+import joblib
 import boto3
 import numpy as np
 import pandas as pd
-# import matplotlib.pyplot as plt
-# import matplotlib as mpl
-# import matplotlib.dates as mdates
-# import matplotlib.colors as mcolors
-# import seaborn as sns
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import matplotlib.dates as mdates
+import matplotlib.colors as mcolors
+import seaborn as sns
 from datetime import datetime, timedelta, date
 import datetime as dt
-# from matplotlib.colors import ListedColormap, BoundaryNorm
-# import matplotlib.patches as mpatches
+from matplotlib.colors import ListedColormap, BoundaryNorm
+import matplotlib.patches as mpatches
 import openai
 import io
 
@@ -420,7 +420,7 @@ def adjust_prcp(prcp, tmax, dew_point, trail):
 
     # Adjust based on trail
     trail_adjustments = {
-        'Devou Park': 1.0,
+        'Devou Park': 1.1,
         'East Fork State Park': 1.3,
         'England Idlewild': 1.0,
         'Harbin Park': 1.0,
@@ -501,11 +501,11 @@ def trail_status(row):
           prcp_7d <= 1.0):
         return 'DEFINITE OPEN'
     elif (prcp_4h <= 0.05 and 
-          prcp_8h <= 0.12 and 
-          prcp_16h <= 0.15 and 
-          prcp_1d <= 0.2 and 
-          prcp_2d <= 0.4 and 
-          prcp_3d <= 0.6 and 
+          prcp_8h <= 0.10 and 
+          prcp_16h <= 0.13 and 
+          prcp_1d <= 0.17 and 
+          prcp_2d <= 0.35 and 
+          prcp_3d <= 0.5 and 
           prcp_5d <= 1.75 and 
           prcp_7d <= 2.5):
         return 'LIKELY OPEN'
@@ -555,12 +555,68 @@ def append_to_log(final_df):
     else:
         print("Log for the current timestamp already exists.")
 
+    return log_df
+
 # Your existing script processing
 final_df['trail_status'] = final_df.apply(trail_status, axis=1)
 print(final_df[['trail', 'PRCP_1d', 'PRCP_8h', 'PRCP_2d', 'PRCP_16h', 'PRCP_3d', 'PRCP_5d', 'PRCP_7d', 'TMAX_1d', 'DEW_POINT_1d', 'trail_status']])
 
 # Append the final_df to log
-append_to_log(final_df[['trail', 'PRCP_1d', 'PRCP_8h', 'PRCP_2d', 'PRCP_16h', 'PRCP_3d', 'PRCP_5d', 'PRCP_7d', 'TMAX_1d', 'DEW_POINT_1d', 'trail_status']])
+log_df = append_to_log(final_df[['trail', 'PRCP_1d', 'PRCP_8h', 'PRCP_2d', 'PRCP_16h', 'PRCP_3d', 'PRCP_5d', 'PRCP_7d', 'TMAX_1d', 'DEW_POINT_1d', 'trail_status']])
+
+#### VIEW LOG
+print("VIEW LOG ######")
+# Get current timestamp and past 24 hours timestamp
+current_timestamp = datetime.now().replace(minute=0, second=0, microsecond=0)
+past_24_hours = current_timestamp - timedelta(hours=24)
+
+# Filter log_df based on timestamp in past 24 hours and sort it
+log_df_for_email = log_df[log_df['timestamp'] >= past_24_hours.strftime('%Y-%m-%d %H:%M:%S')].sort_values(['trail', 'timestamp'], ascending=[True, False])[['trail', 'timestamp', 'trail_status']]
+
+def reformat_timestamp_to_relative(timestamp, current_timestamp):
+    """Reformat timestamp to 'Today XPM/XAM' or 'Yesterday XPM/XAM'."""
+    dt = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
+    if dt.date() == current_timestamp.date():
+        return dt.strftime("Today %I%p")
+    elif dt.date() == (current_timestamp - timedelta(days=1)).date():
+        return dt.strftime("Yesterday %I%p")
+    else:
+        return dt.strftime('%m-%d %I%p')
+
+log_df_for_email['timestamp'] = log_df_for_email['timestamp'].apply(lambda ts: reformat_timestamp_to_relative(ts, current_timestamp))
+log_df_for_email['status_changed'] = log_df_for_email['trail_status'] != log_df_for_email['trail_status'].shift(1)
+log_df_for_email = log_df_for_email[log_df_for_email['status_changed']]
+log_df_for_email = log_df_for_email.drop(columns=['status_changed'])
+print(log_df_for_email.head(50))
+
+### REDUCE TOKEN SIZE
+
+# Generate unique trail codes dynamically
+unique_trails = log_df['trail'].unique()
+trail_mapping = {trail: f"t_{chr(97 + i)}" for i, trail in enumerate(unique_trails)}
+
+# Reverse mapping for full text replacement
+# HAD ISSUES WITH MANUAL MAPPING
+trail_reverse_mapping = {v: k for k, v in trail_mapping.items()}
+print("trail_mapping", trail_mapping)
+
+# Generate status mapping
+status_mapping = {
+    "DEFINITE OPEN": "s_1",
+    "LIKELY OPEN": "s_2",
+    "LIKELY WET/OPEN": "s_3",
+    "UNSURE - REVIEW IN PERSON": "s_4",
+    "CLOSED": "s_5"
+}
+
+status_reverse_mapping = {v: k for k, v in status_mapping.items()}
+
+
+# Assuming log_df_for_email is the DataFrame with the full text
+log_df_for_email['trail'] = log_df_for_email['trail'].map(trail_mapping)
+log_df_for_email['trail_status'] = log_df_for_email['trail_status'].map(status_mapping)
+
+
 ######
 # EMAIL
 #######
@@ -582,27 +638,33 @@ from_email = email_addresses[0]
 df_filtered = final_df[['trail', 'trail_status']]
 df_filtered = df_filtered.sort_values(by='trail')
 
+
 # Set the flag for running OpenAI API
-run_openai_api = False  # Change this to False if you want to skip the OpenAI API call
+run_openai_api = True  # Change this to False if you want to skip the OpenAI API call
 
 if run_openai_api:
-    import openai
     openai.api_key = openai_api_key
 
-    # Generate summary based on the full DataFrame content but focusing on trail status
-    df_summary_input = ("""Analyze the following data and provide a summary of the trail status for mountain bikers. Focus on the trail and trail_status columns, but review the other columns for their relationship to the trail status: {}""".format(final_df.to_string(index=False)))
+    # Call the OpenAI API to generate summary
+    df_summary_input = ("""Please highlight how the Trail Status classifications for each trail has changed over time: {}""".format(log_df_for_email.to_string(index=False)))
 
     response = openai.ChatCompletion.create(
-        model="gpt-4",  # Use the correct model name
-        temperature=0.8,
-        max_tokens=2500,
+        model="gpt-4o",  
+        temperature=0.7,
+        max_tokens=1000,
         messages=[
-            {"role": "system", "content": "You analyze data and provide summaries for daily reports."},
+            {"role": "system", "content": "You send out daily automated emails to all the local Cincinnati Mountain Bikers. You use a semi-casual semi-formal tone."},
             {"role": "user", "content": df_summary_input}
         ]
     )
 
+    # Convert short codes back to full text in the response
     df_summary = response.choices[0].message.content
+    for short_code, full_text in status_reverse_mapping.items():
+        df_summary = df_summary.replace(short_code, full_text)
+    for short_code, full_text in trail_reverse_mapping.items():
+        df_summary = df_summary.replace(short_code, full_text)
+    df_summary = df_summary.replace('\n', '<br>')
 else:
     df_summary = "OpenAI API was not called. Here is the trail status data without the summary."
 
@@ -610,11 +672,23 @@ def format_trail_status(status):
     if "CLOSE" in status:
         return f"<span style='color: darkred; font-weight: bold;'>{status}</span>"
     elif status == "LIKELY WET/OPEN":
-            return f"<span style='color: goldenrod; font-weight: bold;'>{status}</span>"
+        return f"<span style='color: goldenrod; font-weight: bold;'>{status}</span>"
     elif "OPEN" in status:
         return f"<span style='color: darkgreen; font-weight: bold;'>{status}</span>"
     else:
         return f"<span style='color: black;'>{status}</span>"
+
+# Create the HTML content for changes
+def get_trail_changes(df, trail):
+    changes = []
+    for i in range(len(df) - 1):
+        current_status = status_reverse_mapping.get(df.iloc[i]['trail_status'], 'Unknown')
+        next_status = status_reverse_mapping.get(df.iloc[i + 1]['trail_status'], 'Unknown')
+        timestamp = df.iloc[i + 1]['timestamp']
+        changes.append(f"{current_status} → {next_status} ({timestamp})")
+    return "<br>".join(changes)
+
+trail_changes = log_df_for_email.groupby('trail').apply(lambda df: get_trail_changes(df, df['trail'].iloc[0])).to_dict()
 
 bullet_points = df_filtered.apply(lambda row: f"<li><strong>{row['trail']}:</strong> {format_trail_status(row['trail_status'])}</li>", axis=1).tolist()
 bullet_points_html = "<ul>" + "".join(bullet_points) + "</ul>"
@@ -623,18 +697,25 @@ bullet_points_html = "<ul>" + "".join(bullet_points) + "</ul>"
 today_date = datetime.now().strftime("%Y-%m-%d")
 email_body = f"""
 <h2>{today_date} Weather Report</h2>
-<p>Daily Summary:</p>
-<p>{df_summary}</p>
-<hr>
 <h3>Trail Status Data:</h3>
 {bullet_points_html}
+<hr>
+</h2>Last Two Days - See Changes Over Time:</h2>
 """
+
+for trail, changes in trail_changes.items():
+    current_status = status_reverse_mapping[log_df_for_email[log_df_for_email['trail'] == trail].iloc[0]['trail_status']]
+    email_body += f"<h4>{trail_reverse_mapping[trail]}:</h2>"
+    email_body += f"<p><strong>Current Status:</strong> {current_status}</p>"
+    email_body += f"<p><strong>Changes:<br>{changes}</p>"
+
+email_body += "<hr><p>Happy biking!</p>"
 
 # Creating the email message
 msg = MIMEMultipart('alternative')
 msg['From'] = from_email
 msg['To'] = ", ".join(email_addresses)
-msg['Subject'] = f'{today_date} CORA Trail Report'
+msg['Subject'] = f'{today_date} CORA Trail Status Update'
 
 # Attach HTML content
 part = MIMEText(email_body, 'html')
