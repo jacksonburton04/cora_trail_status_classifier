@@ -557,6 +557,7 @@ def append_to_log(final_df):
 
     return log_df
 
+# Your existing script processing
 final_df['trail_status'] = final_df.apply(trail_status, axis=1)
 print(final_df[['trail', 'PRCP_1d', 'PRCP_8h', 'PRCP_2d', 'PRCP_16h', 'PRCP_3d', 'PRCP_5d', 'PRCP_7d', 'TMAX_1d', 'DEW_POINT_1d', 'trail_status']])
 
@@ -617,10 +618,15 @@ print("status_mapping:", status_mapping)
 log_df_for_email['trail'] = log_df_for_email['trail'].map(trail_mapping)
 log_df_for_email['trail_status'] = log_df_for_email['trail_status'].map(status_mapping)
 
-# Email configuration and sending
+
+######
+# EMAIL
+#######
+
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+
 
 # Load email config
 with open('creds/config_emails.json', 'r') as file:
@@ -630,9 +636,10 @@ with open('creds/config_emails.json', 'r') as file:
 from_email = email_addresses[0]
 
 # Assuming final_df is your DataFrame
-final_df = log_df_for_email.copy()  # replace this with your actual final_df DataFrame
+# Filter DataFrame to include only 'trail' and 'trail_status' columns for the email
 df_filtered = final_df[['trail', 'trail_status']]
 df_filtered = df_filtered.sort_values(by='trail')
+
 
 # Set the flag for running OpenAI API
 run_openai_api = True  # Change this to False if you want to skip the OpenAI API call
@@ -683,7 +690,6 @@ def get_trail_changes(df, trail):
         changes.append(f"{current_status} → {next_status} ({timestamp})")
     return "<br>".join(changes)
 
-log_df_for_email['trail_status'] = log_df_for_email['trail_status'].fillna('Unknown')
 trail_changes = log_df_for_email.groupby('trail').apply(lambda df: get_trail_changes(df, df['trail'].iloc[0])).to_dict()
 
 bullet_points = df_filtered.apply(lambda row: f"<li><strong>{row['trail']}:</strong> {format_trail_status(row['trail_status'])}</li>", axis=1).tolist()
