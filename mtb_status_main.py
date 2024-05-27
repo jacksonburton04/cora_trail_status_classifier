@@ -557,7 +557,6 @@ def append_to_log(final_df):
 
     return log_df
 
-# Your existing script processing
 final_df['trail_status'] = final_df.apply(trail_status, axis=1)
 print(final_df[['trail', 'PRCP_1d', 'PRCP_8h', 'PRCP_2d', 'PRCP_16h', 'PRCP_3d', 'PRCP_5d', 'PRCP_7d', 'TMAX_1d', 'DEW_POINT_1d', 'trail_status']])
 
@@ -611,7 +610,7 @@ status_mapping = {
 status_reverse_mapping = {v: k for k, v in status_mapping.items()}
 
 # Map trail and trail_status in the log_df_for_email DataFrame
-log_df_for_email = log_df.copy()  # replace this with your actual log_df_for_email DataFrame
+log_df_for_email = log_df_for_email.copy()  
 log_df_for_email['trail'] = log_df_for_email['trail'].map(trail_mapping)
 log_df_for_email['trail_status'] = log_df_for_email['trail_status'].map(status_mapping)
 
@@ -650,7 +649,7 @@ df_filtered = df_filtered.sort_values(by='trail')
 run_openai_api = True  # Change this to False if you want to skip the OpenAI API call
 
 if run_openai_api:
-    openai.api_key = 'your_openai_api_key'  # replace with your actual OpenAI API key
+    openai.api_key = openai_api_key
 
     # Call the OpenAI API to generate summary
     df_summary_input = ("""Please highlight how the Trail Status classifications for each trail has changed over time: {}""".format(log_df_for_email.to_string(index=False)))
