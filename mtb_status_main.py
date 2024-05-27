@@ -591,42 +591,31 @@ print(log_df_for_email.head(50))
 ### REDUCE TOKEN SIZE
 
 # Generate unique trail codes dynamically
-unique_trails = log_df['trail'].unique()
+unique_trails = log_df['trail'].dropna().unique()  # Exclude NaNs from unique values
 trail_mapping = {trail: f"t_{chr(97 + i)}" for i, trail in enumerate(unique_trails)}
+
+# Add a mapping for NaNs or unknowns
+trail_mapping[None] = "t_unknown"
+trail_mapping['Unknown Trail'] = "t_unknown"
 
 # Reverse mapping for full text replacement
 trail_reverse_mapping = {v: k for k, v in trail_mapping.items()}
-print("trail_mapping", trail_mapping)
+print("trail_mapping:", trail_mapping)
 
-# Generate status mapping
-status_mapping = {
-    "DEFINITE OPEN": "s_1",
-    "LIKELY OPEN": "s_2",
-    "LIKELY WET/OPEN": "s_3",
-    "UNSURE - REVIEW IN PERSON": "s_4",
-    "CLOSED": "s_5"
-}
+# Generate unique status codes dynamically
+unique_statuses = log_df['trail_status'].dropna().unique()  # Exclude NaNs from unique values
+status_mapping = {status: f"s_{i + 1}" for i, status in enumerate(unique_statuses)}
+
+# Add a mapping for NaNs or unknowns
+status_mapping[None] = "s_unknown"
+status_mapping['Unknown Status'] = "s_unknown"
 
 status_reverse_mapping = {v: k for k, v in status_mapping.items()}
+print("status_mapping:", status_mapping)
 
 # Map trail and trail_status in the log_df_for_email DataFrame
-log_df_for_email = log_df_for_email.copy()  
 log_df_for_email['trail'] = log_df_for_email['trail'].map(trail_mapping)
 log_df_for_email['trail_status'] = log_df_for_email['trail_status'].map(status_mapping)
-
-# Add error handling for missing keys
-def get_status(status_code):
-    return status_reverse_mapping.get(status_code, 'Unknown')
-
-# Apply error handling in DataFrame processing
-log_df_for_email['trail_status'] = log_df_for_email['trail_status'].apply(get_status)
-
-# Ensure all timestamps are formatted correctly
-log_df_for_email['timestamp'] = log_df_for_email['timestamp'].apply(lambda ts: reformat_timestamp_to_relative(ts, current_timestamp))
-log_df_for_email['status_changed'] = log_df_for_email['trail_status'] != log_df_for_email['trail_status'].shift(1)
-log_df_for_email = log_df_for_email[log_df_for_email['status_changed']]
-log_df_for_email = log_df_for_email.drop(columns=['status_changed'])
-print(log_df_for_email.head(50))
 
 # Email configuration and sending
 import smtplib
