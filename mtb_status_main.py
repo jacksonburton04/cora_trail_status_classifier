@@ -688,6 +688,7 @@ def get_trail_changes(df, trail):
         changes.append(f"{current_status} → {next_status} ({timestamp})")
     return "<br>".join(changes)
 
+log_df_for_email['trail_status'] = log_df_for_email['trail_status'].fillna('Unknown')
 trail_changes = log_df_for_email.groupby('trail').apply(lambda df: get_trail_changes(df, df['trail'].iloc[0])).to_dict()
 
 bullet_points = df_filtered.apply(lambda row: f"<li><strong>{row['trail']}:</strong> {format_trail_status(row['trail_status'])}</li>", axis=1).tolist()
