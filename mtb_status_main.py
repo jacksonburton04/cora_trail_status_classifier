@@ -596,7 +596,6 @@ unique_trails = log_df['trail'].unique()
 trail_mapping = {trail: f"t_{chr(97 + i)}" for i, trail in enumerate(unique_trails)}
 
 # Reverse mapping for full text replacement
-# HAD ISSUES WITH MANUAL MAPPING
 trail_reverse_mapping = {v: k for k, v in trail_mapping.items()}
 print("trail_mapping", trail_mapping)
 
@@ -611,20 +610,29 @@ status_mapping = {
 
 status_reverse_mapping = {v: k for k, v in status_mapping.items()}
 
-
-# Assuming log_df_for_email is the DataFrame with the full text
+# Map trail and trail_status in the log_df_for_email DataFrame
+log_df_for_email = log_df.copy()  # replace this with your actual log_df_for_email DataFrame
 log_df_for_email['trail'] = log_df_for_email['trail'].map(trail_mapping)
 log_df_for_email['trail_status'] = log_df_for_email['trail_status'].map(status_mapping)
 
+# Add error handling for missing keys
+def get_status(status_code):
+    return status_reverse_mapping.get(status_code, 'Unknown')
 
-######
-# EMAIL
-#######
+# Apply error handling in DataFrame processing
+log_df_for_email['trail_status'] = log_df_for_email['trail_status'].apply(get_status)
 
+# Ensure all timestamps are formatted correctly
+log_df_for_email['timestamp'] = log_df_for_email['timestamp'].apply(lambda ts: reformat_timestamp_to_relative(ts, current_timestamp))
+log_df_for_email['status_changed'] = log_df_for_email['trail_status'] != log_df_for_email['trail_status'].shift(1)
+log_df_for_email = log_df_for_email[log_df_for_email['status_changed']]
+log_df_for_email = log_df_for_email.drop(columns=['status_changed'])
+print(log_df_for_email.head(50))
+
+# Email configuration and sending
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-
 
 # Load email config
 with open('creds/config_emails.json', 'r') as file:
@@ -634,16 +642,15 @@ with open('creds/config_emails.json', 'r') as file:
 from_email = email_addresses[0]
 
 # Assuming final_df is your DataFrame
-# Filter DataFrame to include only 'trail' and 'trail_status' columns for the email
+final_df = log_df_for_email.copy()  # replace this with your actual final_df DataFrame
 df_filtered = final_df[['trail', 'trail_status']]
 df_filtered = df_filtered.sort_values(by='trail')
-
 
 # Set the flag for running OpenAI API
 run_openai_api = True  # Change this to False if you want to skip the OpenAI API call
 
 if run_openai_api:
-    openai.api_key = openai_api_key
+    openai.api_key = 'your_openai_api_key'  # replace with your actual OpenAI API key
 
     # Call the OpenAI API to generate summary
     df_summary_input = ("""Please highlight how the Trail Status classifications for each trail has changed over time: {}""".format(log_df_for_email.to_string(index=False)))
