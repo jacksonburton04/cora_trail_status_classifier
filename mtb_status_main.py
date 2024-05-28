@@ -22,8 +22,8 @@ import io
 
 warnings.filterwarnings('ignore')
 
-config_file_path = 'data/dev_config.json'
-# config_file_path = '/root/cora_trail_status_classifier/data/prod_config.json'
+# config_file_path = 'data/dev_config.json'
+config_file_path = '/root/cora_trail_status_classifier/data/prod_config.json'
 
 with open(config_file_path, 'r') as config_file:
     config = json.load(config_file)
