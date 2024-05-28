@@ -519,16 +519,45 @@ def trail_status(row):
             greater_than[dim][status] = df_gsheet_if_statements.query(f"`Metric Direction` == 'Greater than' and `PRCP Dimension` == '{dim}'")[status].values[0]
             less_than[dim][status] = df_gsheet_if_statements.query(f"`Metric Direction` == 'Less than' and `PRCP Dimension` == '{dim}'")[status].values[0]
 
+    # def get_trail_status(prcp_values):
+    #     for status in status_levels:
+    #         if ((prcp_values['prcp_4h'] >= greater_than['prcp_4h'][status] and prcp_values['prcp_4h'] <= less_than['prcp_4h'][status]) and 
+    #             (prcp_values['prcp_8h'] >= greater_than['prcp_8h'][status] and prcp_values['prcp_8h'] <= less_than['prcp_8h'][status]) and 
+    #             (prcp_values['prcp_16h'] >= greater_than['prcp_16h'][status] and prcp_values['prcp_16h'] <= less_than['prcp_16h'][status]) and 
+    #             (prcp_values['prcp_1d'] >= greater_than['prcp_1d'][status] and prcp_values['prcp_1d'] <= less_than['prcp_1d'][status]) and 
+    #             (prcp_values['prcp_2d'] >= greater_than['prcp_2d'][status] and prcp_values['prcp_2d'] <= less_than['prcp_2d'][status]) and 
+    #             (prcp_values['prcp_3d'] >= greater_than['prcp_3d'][status] and prcp_values['prcp_3d'] <= less_than['prcp_3d'][status])):
+    #             return status
+    #     return 'UNSURE - REVIEW IN PERSON'
+
     def get_trail_status(prcp_values):
+        max_status = 'UNSURE - REVIEW IN PERSON'
+        max_count = 0
+
         for status in status_levels:
-            if ((prcp_values['prcp_4h'] > greater_than['prcp_4h'][status] or prcp_values['prcp_4h'] < less_than['prcp_4h'][status]) and 
-                (prcp_values['prcp_8h'] > greater_than['prcp_8h'][status] or prcp_values['prcp_8h'] < less_than['prcp_8h'][status]) and 
-                (prcp_values['prcp_16h'] > greater_than['prcp_16h'][status] or prcp_values['prcp_16h'] < less_than['prcp_16h'][status]) and 
-                (prcp_values['prcp_1d'] > greater_than['prcp_1d'][status] or prcp_values['prcp_1d'] < less_than['prcp_1d'][status]) and 
-                (prcp_values['prcp_2d'] > greater_than['prcp_2d'][status] or prcp_values['prcp_2d'] < less_than['prcp_2d'][status]) and 
-                (prcp_values['prcp_3d'] > greater_than['prcp_3d'][status] or prcp_values['prcp_3d'] < less_than['prcp_3d'][status])):
-                return status
-        return 'UNSURE - REVIEW IN PERSON'
+            # Check if prcp_4h condition is met
+            if not (greater_than['prcp_4h'][status] <= prcp_values['prcp_4h'] <= less_than['prcp_4h'][status]):
+                continue  # Skip this status if prcp_4h condition is not met
+            
+            count = 1  # Since prcp_4h condition is already met
+
+            if greater_than['prcp_8h'][status] <= prcp_values['prcp_8h'] <= less_than['prcp_8h'][status]:
+                count += 1
+            if greater_than['prcp_16h'][status] <= prcp_values['prcp_16h'] <= less_than['prcp_16h'][status]:
+                count += 1
+            if greater_than['prcp_1d'][status] <= prcp_values['prcp_1d'] <= less_than['prcp_1d'][status]:
+                count += 1
+            if greater_than['prcp_2d'][status] <= prcp_values['prcp_2d'] <= less_than['prcp_2d'][status]:
+                count += 1
+            if greater_than['prcp_3d'][status] <= prcp_values['prcp_3d'] <= less_than['prcp_3d'][status]:
+                count += 1
+
+            if count > max_count:
+                max_count = count
+                max_status = status
+
+        return max_status
+
 
     prcp_values = {
         'prcp_4h': prcp_4h,
@@ -604,6 +633,7 @@ past_24_hours = current_timestamp - timedelta(hours=24)
 # the script runs once per hour, so duplicates should only exist when in DEV mode locally running it more than 1X per hour
 # will drop duplicates at random to deal with this
 log_df_for_email = log_df[log_df['timestamp'] >= past_24_hours.strftime('%Y-%m-%d %H:%M:%S')].sort_values(['trail', 'timestamp'], ascending=[True, False])[['trail', 'timestamp', 'trail_status']].drop_duplicates(subset=['trail', 'timestamp'])
+log_df_visual = log_df_for_email.copy()
 
 def reformat_timestamp_to_relative(timestamp, current_timestamp):
     """Reformat timestamp to 'Today XPM/XAM' or 'Yesterday XPM/XAM'."""
@@ -650,6 +680,52 @@ print("status_mapping:", status_mapping)
 log_df_for_email['trail'] = log_df_for_email['trail'].map(trail_mapping)
 log_df_for_email['trail_status'] = log_df_for_email['trail_status'].map(status_mapping)
 
+#####
+## PLOT 
+#####
+# Define the color mapping
+color_mapping = {
+    'DEFINITE CLOSE': 'darkred',
+    'LIKELY CLOSE': 'lightcoral',
+    'LIKELY WET/OPEN': 'darkgoldenrod',
+    'LIKELY OPEN': 'lightgreen',
+    'DEFINITE OPEN': 'darkgreen'
+}
+
+# Apply the color mapping to the DataFrame
+log_df_visual['color'] = log_df_visual['trail_status'].map(color_mapping).fillna('black')
+
+# Create the plot
+plt.figure(figsize=(12, 8))
+log_df_visual = log_df_visual.sort_values('timestamp')
+scatter = plt.scatter(log_df_visual['timestamp'], log_df_visual['trail'], c=log_df_visual['color'], s=100, marker='s')  # 's' for squares, size 100
+
+# Create a legend
+legend_elements = [
+    plt.Line2D([0], [0], marker='s', color='w', label='DEFINITE CLOSE', markersize=10, markerfacecolor='darkred'),
+    plt.Line2D([0], [0], marker='s', color='w', label='LIKELY CLOSE', markersize=10, markerfacecolor='lightcoral'),
+    plt.Line2D([0], [0], marker='s', color='w', label='LIKELY WET/OPEN', markersize=10, markerfacecolor='darkgoldenrod'),
+    plt.Line2D([0], [0], marker='s', color='w', label='LIKELY OPEN', markersize=10, markerfacecolor='lightgreen'),
+    plt.Line2D([0], [0], marker='s', color='w', label='DEFINITE OPEN', markersize=10, markerfacecolor='darkgreen'),
+    plt.Line2D([0], [0], marker='s', color='w', label='Unknown', markersize=10, markerfacecolor='black')
+]
+
+# plt.legend(handles=legend_elements, loc='upper right')
+
+# # Set labels and title
+# plt.xlabel('Timestamp')
+# plt.ylabel('Trail')
+# plt.title('Trail Status Over Time')
+
+# plt.show()
+
+plt.legend(handles=legend_elements, loc='upper right')
+plt.xlabel('Timestamp')
+plt.ylabel('Trail')
+plt.title('Trail Status Over Time')
+plt.savefig('trail_status_plot.png')  # Save the plot as an image file
+plt.close()
+
 
 ######
 # EMAIL
@@ -658,7 +734,7 @@ log_df_for_email['trail_status'] = log_df_for_email['trail_status'].map(status_m
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-
+from email.mime.image import MIMEImage
 
 # Load email config
 with open('creds/config_emails.json', 'r') as file:
@@ -706,11 +782,11 @@ def format_trail_status(status):
     if status == "DEFINITE CLOSE":
         return f"<span style='color: darkred; font-weight: bold;'>{status}</span>"
     if status == "LIKELY CLOSE":
-        return f"<span style='color: darkred; font-weight: bold;'>{status}</span>"
+        return f"<span style='color: lightcoral; font-weight: bold;'>{status}</span>"
     elif status == "LIKELY WET/OPEN":
         return f"<span style='color: goldenrod; font-weight: bold;'>{status}</span>"
     elif status == "LIKELY OPEN":
-        return f"<span style='color: darkgreen; font-weight: bold;'>{status}</span>"
+        return f"<span style='color: lightgreen; font-weight: bold;'>{status}</span>"
     elif status == "DEFINITE OPEN":
         return f"<span style='color: darkgreen; font-weight: bold;'>{status}</span>"
     else:
@@ -749,6 +825,7 @@ for trail, changes in trail_changes.items():
     email_body += f"<p>Changes:<br>{changes}</p>"
 
 email_body += "<hr><p>Happy biking!</p>"
+email_body += "<img src='cid:trail_status_plot' alt='Trail Status Plot'>"
 
 # Creating the email message
 msg = MIMEMultipart('alternative')
@@ -759,6 +836,13 @@ msg['Subject'] = f'{today_date} CORA Trail Status Update'
 # Attach HTML content
 part = MIMEText(email_body, 'html')
 msg.attach(part)
+
+# Attach the image
+with open('trail_status_plot.png', 'rb') as img:
+    img_data = img.read()
+img_part = MIMEImage(img_data, name='trail_status_plot.png')
+img_part.add_header('Content-ID', '<trail_status_plot>')
+msg.attach(img_part)
 
 with smtplib.SMTP('smtp.gmail.com', 587) as server:  # Use the correct SMTP server and port
     server.starttls()
