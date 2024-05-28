@@ -22,8 +22,8 @@ import io
 
 warnings.filterwarnings('ignore')
 
-# config_file_path = 'data/dev_config.json'
-config_file_path = '/root/cora_trail_status_classifier/data/prod_config.json'
+config_file_path = 'data/dev_config.json'
+# config_file_path = '/root/cora_trail_status_classifier/data/prod_config.json'
 
 with open(config_file_path, 'r') as config_file:
     config = json.load(config_file)
@@ -394,6 +394,13 @@ print(df_class.head(25))
 #####
 #START CLASSIFICATION
 #####
+
+sheet_id = '1IrZgmVjHmFkdxxM_65XzKW_nt8p8LCIHgkqtbjY4QJE'
+sheet_name = 'trail_adjustments'
+url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={sheet_name}'
+df_gsheet_trail_adjustments = pd.read_csv(url)
+trail_adjustments = dict(zip(df_gsheet_trail_adjustments['Trail'], df_gsheet_trail_adjustments['PRCP_ADJ_VALUE']))
+
 def adjust_prcp(prcp, tmax, dew_point, trail):
     # Adjust based on TMAX
     if tmax > 85:
@@ -418,26 +425,40 @@ def adjust_prcp(prcp, tmax, dew_point, trail):
     elif dew_point_temp_diff < 25:
         prcp *= 0.8  
 
-    # Adjust based on trail
-    trail_adjustments = {
-        'Devou Park': 1.1,
-        'East Fork State Park': 1.3,
-        'England Idlewild': 1.0,
-        'Harbin Park': 1.0,
-        'Landen Deerfield': 1.0,
-        'Milford Trails': 0.4,
-        'Mitchell Memorial Forest': 1.0,
-        'Mount Airy Forest': 0.5,
-        'Premier Health Bike Park': 1.2,
-        'Tower Park': 1.0,
-        'Caesar Creek': 1.0,
-    }
+
+
+    # trail_adjustments = dict(zip(df_gsheet_trail_adjustments['Trail'], df_gsheet_trail_adjustments['PRCP_ADJ_VALUE']))
+
+    # Print the dictionary to verify
+    # print(trail_adjustments)
+
+    # # # Adjust based on trail
+    # trail_adjustments = {
+    #     'Devou Park': 1.1,
+    #     'East Fork State Park': 1.3,
+    #     'England Idlewild': 1.0,
+    #     'Harbin Park': 1.0,
+    #     'Landen Deerfield': 1.0,
+    #     'Milford Trails': 0.4,
+    #     'Mitchell Memorial Forest': 1.0,
+    #     'Mount Airy Forest': 0.5,
+    #     'Premier Health Bike Park': 1.2,
+    #     'Tower Park': 1.0,
+    #     'Caesar Creek': 1.0,
+    # }
     
     # Apply trail adjustment if the trail is in the adjustment list
     if trail in trail_adjustments:
         prcp *= trail_adjustments[trail]
 
     return prcp
+
+
+sheet_id = '1IrZgmVjHmFkdxxM_65XzKW_nt8p8LCIHgkqtbjY4QJE'
+sheet_name = 'if_statements'
+url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={sheet_name}'
+df_gsheet_if_statements = pd.read_csv(url)
+print(df_gsheet_if_statements.head(10))
 
 def trail_status(row):
     prcp_4h = row['PRCP_4h']
@@ -476,50 +497,57 @@ def trail_status(row):
     prcp_5d = adjust_prcp(prcp_5d, tmax_5d, dew_point_5d, trail)
     prcp_7d = adjust_prcp(prcp_7d, tmax_7d, dew_point_7d, trail)
 
-    if (prcp_4h > 0.25 or 
-        prcp_8h > 0.5 or 
-        prcp_16h > 0.6 or 
-        prcp_1d > 0.75 or 
-        prcp_2d > 1.5 or 
-        prcp_3d > 3.0):
-        return 'DEFINITE CLOSE'
-    elif (0.10 < prcp_4h <= 0.25 or 
-          0.15 < prcp_8h <= 0.5 or 
-          0.25 < prcp_16h <= 0.6 or 
-          0.75 < prcp_1d <= 1.0 or 
-          1.5 < prcp_2d <= 2.0 or 
-          2.0 < prcp_3d <= 2.5 or 
-          2.5 < prcp_5d <= 3.0):
-        return 'PROBABLY CLOSE'
-    elif (prcp_4h <= 0.01 and 
-          prcp_8h <= 0.03 and 
-          prcp_16h <= 0.05 and 
-          prcp_1d <= 0.07 and 
-          prcp_2d <= 0.15 and 
-          prcp_3d <= 0.3 and 
-          prcp_5d <= 0.7 and 
-          prcp_7d <= 1.0):
-        return 'DEFINITE OPEN'
-    elif (prcp_4h <= 0.05 and 
-          prcp_8h <= 0.10 and 
-          prcp_16h <= 0.13 and 
-          prcp_1d <= 0.17 and 
-          prcp_2d <= 0.35 and 
-          prcp_3d <= 0.5 and 
-          prcp_5d <= 1.75 and 
-          prcp_7d <= 2.5):
-        return 'LIKELY OPEN'
-    elif (prcp_4h <= 0.10 and 
-          prcp_8h <= 0.18 and 
-          prcp_16h <= 0.25 and 
-          prcp_1d <= 0.3 and 
-          prcp_2d <= 0.6 and 
-          prcp_3d <= 1.0 and 
-          prcp_5d <= 2.5 and 
-          prcp_7d <= 4.5):
-        return 'LIKELY WET/OPEN'
-    else:
+    # sheet_id = '1IrZgmVjHmFkdxxM_65XzKW_nt8p8LCIHgkqtbjY4QJE'
+    # sheet_name = 'if_statements'
+    # url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={sheet_name}'
+    # df_gsheet_if_statements = pd.read_csv(url)
+
+    # print("gsheets if statements", df_gsheet_if_statements.head(10))
+
+    # status_levels = ['DEFINITE CLOSE', 'LIKELY CLOSE', 'LIKELY WET/OPEN', 'LIKELY OPEN', 'DEFINITE OPEN']
+
+    dimensions = ['prcp_4h', 'prcp_8h', 'prcp_16h', 'prcp_1d', 'prcp_2d', 'prcp_3d', 'prcp_5d', 'prcp_7d']
+    status_levels = ['DEFINITE CLOSE', 'LIKELY CLOSE', 'LIKELY WET/OPEN', 'LIKELY OPEN', 'DEFINITE OPEN']
+
+    # Initialize dictionaries to store the threshold values
+    greater_than = {dim: {} for dim in dimensions}
+    less_than = {dim: {} for dim in dimensions}
+
+    # Populate the dictionaries with the threshold values
+    for dim in dimensions:
+        for status in status_levels:
+            greater_than[dim][status] = df_gsheet_if_statements.query(f"`Metric Direction` == 'Greater than' and `PRCP Dimension` == '{dim}'")[status].values[0]
+            less_than[dim][status] = df_gsheet_if_statements.query(f"`Metric Direction` == 'Less than' and `PRCP Dimension` == '{dim}'")[status].values[0]
+
+    def get_trail_status(prcp_values):
+        for status in status_levels:
+            if ((prcp_values['prcp_4h'] > greater_than['prcp_4h'][status] or prcp_values['prcp_4h'] < less_than['prcp_4h'][status]) and 
+                (prcp_values['prcp_8h'] > greater_than['prcp_8h'][status] or prcp_values['prcp_8h'] < less_than['prcp_8h'][status]) and 
+                (prcp_values['prcp_16h'] > greater_than['prcp_16h'][status] or prcp_values['prcp_16h'] < less_than['prcp_16h'][status]) and 
+                (prcp_values['prcp_1d'] > greater_than['prcp_1d'][status] or prcp_values['prcp_1d'] < less_than['prcp_1d'][status]) and 
+                (prcp_values['prcp_2d'] > greater_than['prcp_2d'][status] or prcp_values['prcp_2d'] < less_than['prcp_2d'][status]) and 
+                (prcp_values['prcp_3d'] > greater_than['prcp_3d'][status] or prcp_values['prcp_3d'] < less_than['prcp_3d'][status])):
+                return status
         return 'UNSURE - REVIEW IN PERSON'
+
+    prcp_values = {
+        'prcp_4h': prcp_4h,
+        'prcp_8h': prcp_8h,
+        'prcp_16h': prcp_16h,
+        'prcp_1d': prcp_1d,
+        'prcp_2d': prcp_2d,
+        'prcp_3d': prcp_3d,
+        'prcp_5d': prcp_5d,
+        'prcp_7d': prcp_7d
+    }
+    print("processing this row of data", row)
+    print("Result: ", get_trail_status(prcp_values))
+    return get_trail_status(prcp_values)
+
+# Your existing script processing
+final_df['trail_status'] = final_df.apply(trail_status, axis=1)
+print(final_df[['trail', 'PRCP_1d', 'PRCP_8h', 'PRCP_2d', 'PRCP_16h', 'PRCP_3d', 'PRCP_5d', 'PRCP_7d', 'TMAX_1d', 'DEW_POINT_1d', 'trail_status']])
+
 
 # Initialize the S3 client
 s3_client = boto3.client('s3')
@@ -565,13 +593,17 @@ print(final_df[['trail', 'PRCP_1d', 'PRCP_8h', 'PRCP_2d', 'PRCP_16h', 'PRCP_3d',
 log_df = append_to_log(final_df[['trail', 'PRCP_1d', 'PRCP_8h', 'PRCP_2d', 'PRCP_16h', 'PRCP_3d', 'PRCP_5d', 'PRCP_7d', 'TMAX_1d', 'DEW_POINT_1d', 'trail_status']])
 
 #### VIEW LOG
+
+#### VIEW LOG
 print("VIEW LOG ######")
 # Get current timestamp and past 24 hours timestamp
 current_timestamp = datetime.now().replace(minute=0, second=0, microsecond=0)
 past_24_hours = current_timestamp - timedelta(hours=24)
 
 # Filter log_df based on timestamp in past 24 hours and sort it
-log_df_for_email = log_df[log_df['timestamp'] >= past_24_hours.strftime('%Y-%m-%d %H:%M:%S')].sort_values(['trail', 'timestamp'], ascending=[True, False])[['trail', 'timestamp', 'trail_status']]
+# the script runs once per hour, so duplicates should only exist when in DEV mode locally running it more than 1X per hour
+# will drop duplicates at random to deal with this
+log_df_for_email = log_df[log_df['timestamp'] >= past_24_hours.strftime('%Y-%m-%d %H:%M:%S')].sort_values(['trail', 'timestamp'], ascending=[True, False])[['trail', 'timestamp', 'trail_status']].drop_duplicates(subset=['trail', 'timestamp'])
 
 def reformat_timestamp_to_relative(timestamp, current_timestamp):
     """Reformat timestamp to 'Today XPM/XAM' or 'Yesterday XPM/XAM'."""
@@ -642,17 +674,17 @@ df_filtered = df_filtered.sort_values(by='trail')
 
 
 # Set the flag for running OpenAI API
-run_openai_api = True  # Change this to False if you want to skip the OpenAI API call
+run_openai_api = False  # Change this to False if you want to skip the OpenAI API call
 
 if run_openai_api:
     openai.api_key = openai_api_key
 
     # Call the OpenAI API to generate summary
-    df_summary_input = ("""Please highlight how the Trail Status classifications for each trail has changed over time: {}""".format(log_df_for_email.to_string(index=False)))
+    df_summary_input = ("""Please point out trail status: {}""".format(log_df_for_email.to_string(index=False)))
 
     response = openai.ChatCompletion.create(
         model="gpt-4o",  
-        temperature=0.7,
+        temperature=0.4,
         max_tokens=1000,
         messages=[
             {"role": "system", "content": "You send out daily automated emails to all the local Cincinnati Mountain Bikers. You use a semi-casual semi-formal tone."},
@@ -671,11 +703,15 @@ else:
     df_summary = "OpenAI API was not called. Here is the trail status data without the summary."
 
 def format_trail_status(status):
-    if "CLOSE" in status:
+    if status == "DEFINITE CLOSE":
+        return f"<span style='color: darkred; font-weight: bold;'>{status}</span>"
+    if status == "LIKELY CLOSE":
         return f"<span style='color: darkred; font-weight: bold;'>{status}</span>"
     elif status == "LIKELY WET/OPEN":
         return f"<span style='color: goldenrod; font-weight: bold;'>{status}</span>"
-    elif "OPEN" in status:
+    elif status == "LIKELY OPEN":
+        return f"<span style='color: darkgreen; font-weight: bold;'>{status}</span>"
+    elif status == "DEFINITE OPEN":
         return f"<span style='color: darkgreen; font-weight: bold;'>{status}</span>"
     else:
         return f"<span style='color: black;'>{status}</span>"
@@ -684,13 +720,14 @@ def format_trail_status(status):
 def get_trail_changes(df, trail):
     changes = []
     for i in range(len(df) - 1):
-        current_status = status_reverse_mapping.get(df.iloc[i]['trail_status'], 'Unknown')
-        next_status = status_reverse_mapping.get(df.iloc[i + 1]['trail_status'], 'Unknown')
+        current_status = format_trail_status(status_reverse_mapping.get(df.iloc[i]['trail_status'], 'Unknown'))
+        next_status = format_trail_status(status_reverse_mapping.get(df.iloc[i + 1]['trail_status'], 'Unknown'))
         timestamp = df.iloc[i + 1]['timestamp']
         changes.append(f"{current_status} → {next_status} ({timestamp})")
     return "<br>".join(changes)
 
-trail_changes = log_df_for_email.groupby('trail').apply(lambda df: get_trail_changes(df, df['trail'].iloc[0])).to_dict()
+# trail_changes = log_df_for_email.groupby('trail').apply(lambda df: get_trail_changes(df, df['trail'].iloc[0])).to_dict()
+trail_changes = dict(sorted(log_df_for_email.groupby('trail').apply(lambda df: get_trail_changes(df, df['trail'].iloc[0])).to_dict().items()))
 
 bullet_points = df_filtered.apply(lambda row: f"<li><strong>{row['trail']}:</strong> {format_trail_status(row['trail_status'])}</li>", axis=1).tolist()
 bullet_points_html = "<ul>" + "".join(bullet_points) + "</ul>"
@@ -706,10 +743,10 @@ email_body = f"""
 """
 
 for trail, changes in trail_changes.items():
-    current_status = status_reverse_mapping[log_df_for_email[log_df_for_email['trail'] == trail].iloc[0]['trail_status']]
-    email_body += f"<h4>{trail_reverse_mapping[trail]}:</h2>"
-    email_body += f"<p><strong>Current Status:</strong> {current_status}</p>"
-    email_body += f"<p><strong>Changes:<br>{changes}</p>"
+    current_status = format_trail_status(status_reverse_mapping[log_df_for_email[log_df_for_email['trail'] == trail].iloc[0]['trail_status']])
+    email_body += f"<h2>{trail_reverse_mapping[trail]}:</h2>"
+    email_body += f"<h3>Current Status: {current_status}</h3>"
+    email_body += f"<p>Changes:<br>{changes}</p>"
 
 email_body += "<hr><p>Happy biking!</p>"
 
