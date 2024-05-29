@@ -403,17 +403,22 @@ trail_adjustments = dict(zip(df_gsheet_trail_adjustments['Trail'], df_gsheet_tra
 
 def adjust_prcp(prcp, tmax, dew_point, trail):
     # Adjust based on TMAX
-    if tmax > 85:
-        prcp *= 0.8  
-    elif tmax > 75:
-        prcp *= 0.9  
+    if tmax > 90:
+        prcp *= 0.75
+    elif tmax > 80:
+        prcp *= 0.85   
+    elif tmax > 70:
+        prcp *= 0.95  
+    elif tmax <= 45:
+        prcp *= 1.3
     elif tmax <= 55:
-        prcp *= 1.2  
+        prcp *= 1.2    
     elif tmax <= 65:
         prcp *= 1.1 
 
     dew_point_temp_diff = tmax - dew_point
-    # Adjust based on DEW_POINT
+
+    # Adjust based on DEW_POINT DIFF
     if dew_point_temp_diff < 5:
         prcp *= 1.2
     elif dew_point_temp_diff < 10:
@@ -424,28 +429,6 @@ def adjust_prcp(prcp, tmax, dew_point, trail):
         prcp *= 0.9
     elif dew_point_temp_diff < 25:
         prcp *= 0.8  
-
-
-
-    # trail_adjustments = dict(zip(df_gsheet_trail_adjustments['Trail'], df_gsheet_trail_adjustments['PRCP_ADJ_VALUE']))
-
-    # Print the dictionary to verify
-    # print(trail_adjustments)
-
-    # # # Adjust based on trail
-    # trail_adjustments = {
-    #     'Devou Park': 1.1,
-    #     'East Fork State Park': 1.3,
-    #     'England Idlewild': 1.0,
-    #     'Harbin Park': 1.0,
-    #     'Landen Deerfield': 1.0,
-    #     'Milford Trails': 0.4,
-    #     'Mitchell Memorial Forest': 1.0,
-    #     'Mount Airy Forest': 0.5,
-    #     'Premier Health Bike Park': 1.2,
-    #     'Tower Park': 1.0,
-    #     'Caesar Creek': 1.0,
-    # }
     
     # Apply trail adjustment if the trail is in the adjustment list
     if trail in trail_adjustments:
@@ -519,28 +502,18 @@ def trail_status(row):
             greater_than[dim][status] = df_gsheet_if_statements.query(f"`Metric Direction` == 'Greater than' and `PRCP Dimension` == '{dim}'")[status].values[0]
             less_than[dim][status] = df_gsheet_if_statements.query(f"`Metric Direction` == 'Less than' and `PRCP Dimension` == '{dim}'")[status].values[0]
 
-    # def get_trail_status(prcp_values):
-    #     for status in status_levels:
-    #         if ((prcp_values['prcp_4h'] >= greater_than['prcp_4h'][status] and prcp_values['prcp_4h'] <= less_than['prcp_4h'][status]) and 
-    #             (prcp_values['prcp_8h'] >= greater_than['prcp_8h'][status] and prcp_values['prcp_8h'] <= less_than['prcp_8h'][status]) and 
-    #             (prcp_values['prcp_16h'] >= greater_than['prcp_16h'][status] and prcp_values['prcp_16h'] <= less_than['prcp_16h'][status]) and 
-    #             (prcp_values['prcp_1d'] >= greater_than['prcp_1d'][status] and prcp_values['prcp_1d'] <= less_than['prcp_1d'][status]) and 
-    #             (prcp_values['prcp_2d'] >= greater_than['prcp_2d'][status] and prcp_values['prcp_2d'] <= less_than['prcp_2d'][status]) and 
-    #             (prcp_values['prcp_3d'] >= greater_than['prcp_3d'][status] and prcp_values['prcp_3d'] <= less_than['prcp_3d'][status])):
-    #             return status
-    #     return 'UNSURE - REVIEW IN PERSON'
+    print("DIMENSIONS", dimensions)
+    print("dim", dim)
 
     def get_trail_status(prcp_values):
-        max_status = 'UNSURE - REVIEW IN PERSON'
-        max_count = 0
+        
+        status_counts = []
 
         for status in status_levels:
-            # Check if prcp_4h condition is met
-            if not (greater_than['prcp_4h'][status] <= prcp_values['prcp_4h'] <= less_than['prcp_4h'][status]):
-                continue  # Skip this status if prcp_4h condition is not met
-            
-            count = 1  # Since prcp_4h condition is already met
+            count = 0
 
+            if greater_than['prcp_4h'][status] <= prcp_values['prcp_4h'] <= less_than['prcp_4h'][status]:
+                count += 1
             if greater_than['prcp_8h'][status] <= prcp_values['prcp_8h'] <= less_than['prcp_8h'][status]:
                 count += 1
             if greater_than['prcp_16h'][status] <= prcp_values['prcp_16h'] <= less_than['prcp_16h'][status]:
@@ -551,13 +524,89 @@ def trail_status(row):
                 count += 1
             if greater_than['prcp_3d'][status] <= prcp_values['prcp_3d'] <= less_than['prcp_3d'][status]:
                 count += 1
+            if greater_than['prcp_5d'][status] <= prcp_values['prcp_5d'] <= less_than['prcp_5d'][status]:
+                count += 1
+            if greater_than['prcp_7d'][status] <= prcp_values['prcp_7d'] <= less_than['prcp_7d'][status]:
+                count += 1
 
-            if count > max_count:
-                max_count = count
-                max_status = status
+            status_counts.append({'status': status, 'count': count})
 
-        return max_status
+            # # Flag to skip the current status if the 8 hour condition is not met
+            # # Reset to false every time
+            # skip_status = False
 
+            # # If past 8 hour PRCP exceeds MAX, then SKIP scoring this status
+            # if (prcp_values['prcp_8h'] >= greater_than['prcp_8h'][status]):
+            #     skip_status = True
+            
+            # print("SKIP STATUS: ", skip_status)
+
+            # if not skip_status and greater_than['prcp_4h'][status] <= prcp_values['prcp_4h'] <= less_than['prcp_4h'][status]:
+            #     count += 0.34
+            #     print(status, " = ", count)
+            # if not skip_status and greater_than['prcp_8h'][status] <= prcp_values['prcp_8h'] <= less_than['prcp_8h'][status]:
+            #     count += 0.32
+            #     print(status, " = ", count)
+            # if not skip_status and greater_than['prcp_16h'][status] <= prcp_values['prcp_16h'] <= less_than['prcp_16h'][status]:
+            #     count += 0.34
+            #     print(status, " = ", count)
+            # if not skip_status and greater_than['prcp_1d'][status] <= prcp_values['prcp_1d'] <= less_than['prcp_1d'][status]:
+            #     count += 0.5
+            #     print(status, " = ", count)
+            # if not skip_status and greater_than['prcp_2d'][status] <= prcp_values['prcp_2d'] <= less_than['prcp_2d'][status]:
+            #     count += 2
+            #     print(status, " = ", count)
+            # if not skip_status and greater_than['prcp_3d'][status] <= prcp_values['prcp_3d'] <= less_than['prcp_3d'][status]:
+            #     count += 1
+            #     print(status, " = ", count)
+            # if not skip_status and greater_than['prcp_5d'][status] <= prcp_values['prcp_5d'] <= less_than['prcp_5d'][status]:
+            #     count += 0.75
+            #     print(status, " = ", count)
+            # if not skip_status and greater_than['prcp_7d'][status] <= prcp_values['prcp_7d'] <= less_than['prcp_7d'][status]:
+            #     count += 0.75
+            #     print(status, " = ", count)
+
+            # # If the status was not skipped, append the status and its count to the list
+            # if not skip_status:
+            #     status_counts.append({'status': status, 'count': count})
+            #     print("Status #: ", status, count)
+
+
+
+        # Convert the list to a DataFrame
+        df_status_counts = pd.DataFrame(status_counts)
+        print("#################")
+        print("DF STATUS COUNTS", df_status_counts.head(5))
+
+        # Status scores as provided
+        status_scores = {
+            'DEFINITE CLOSE': 5,
+            'LIKELY CLOSE': 4,
+            'LIKELY WET/OPEN': 3,
+            'LIKELY OPEN': 2,
+            'DEFINITE OPEN': 1
+        }
+
+        # Calculate the weighted average score
+        total_weighted_score = 0
+        total_count = 0
+
+        for _, row in df_status_counts.iterrows():
+            status = row['status']
+            count = row['count']
+            total_weighted_score += count * status_scores[status]
+            total_count += count
+
+        weighted_average_score = total_weighted_score / total_count if total_count != 0 else 0
+        print("WEIGHTED AVG SCORE", weighted_average_score)
+
+        # Find the closest status based on the weighted average score
+        closest_status = min(status_scores, key=lambda k: abs(status_scores[k] - weighted_average_score))
+        print("CLOSEST STATUS", closest_status)
+        trail_status = closest_status
+        # df_status_counts['trail_status'] = trail_status
+
+        return trail_status
 
     prcp_values = {
         'prcp_4h': prcp_4h,
@@ -569,7 +618,7 @@ def trail_status(row):
         'prcp_5d': prcp_5d,
         'prcp_7d': prcp_7d
     }
-    print("processing this row of data", row)
+    print("processing this row of data", row[['trail', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_1d', 'PRCP_2d', 'PRCP_3d', 'PRCP_5d', 'PRCP_7d']])
     print("Result: ", get_trail_status(prcp_values))
     return get_trail_status(prcp_values)
 
@@ -687,7 +736,7 @@ log_df_for_email['trail_status'] = log_df_for_email['trail_status'].map(status_m
 color_mapping = {
     'DEFINITE CLOSE': 'darkred',
     'LIKELY CLOSE': 'lightcoral',
-    'LIKELY WET/OPEN': 'darkgoldenrod',
+    'LIKELY WET/OPEN': 'gold',
     'LIKELY OPEN': 'lightgreen',
     'DEFINITE OPEN': 'darkgreen'
 }
@@ -696,34 +745,43 @@ color_mapping = {
 log_df_visual['color'] = log_df_visual['trail_status'].map(color_mapping).fillna('black')
 
 # Create the plot
-plt.figure(figsize=(12, 8))
-log_df_visual = log_df_visual.sort_values('timestamp')
-scatter = plt.scatter(log_df_visual['timestamp'], log_df_visual['trail'], c=log_df_visual['color'], s=100, marker='s')  # 's' for squares, size 100
+plt.figure(figsize=(12, 12))
+log_df_visual = log_df_visual.sort_values(['timestamp', 'trail'], ascending = [True, False])
+# log_df_visual = log_df_visual.sort_values('trail', ascending = False)
+log_df_visual['timestamp'] = pd.to_datetime(log_df_visual['timestamp'])
+log_df_visual['timestamp'] = log_df_visual['timestamp'].dt.strftime('%I%p')
+scatter = plt.scatter(log_df_visual['timestamp'], log_df_visual['trail'], c=log_df_visual['color'], s=200, marker='s')  # 's' for squares, size 100
 
 # Create a legend
 legend_elements = [
-    plt.Line2D([0], [0], marker='s', color='w', label='DEFINITE CLOSE', markersize=10, markerfacecolor='darkred'),
-    plt.Line2D([0], [0], marker='s', color='w', label='LIKELY CLOSE', markersize=10, markerfacecolor='lightcoral'),
-    plt.Line2D([0], [0], marker='s', color='w', label='LIKELY WET/OPEN', markersize=10, markerfacecolor='darkgoldenrod'),
-    plt.Line2D([0], [0], marker='s', color='w', label='LIKELY OPEN', markersize=10, markerfacecolor='lightgreen'),
-    plt.Line2D([0], [0], marker='s', color='w', label='DEFINITE OPEN', markersize=10, markerfacecolor='darkgreen'),
-    plt.Line2D([0], [0], marker='s', color='w', label='Unknown', markersize=10, markerfacecolor='black')
+    plt.Line2D([0], [0], marker='s', color='w', label='DEFINITE CLOSE', markersize=20, markerfacecolor='darkred'),
+    plt.Line2D([0], [0], marker='s', color='w', label='LIKELY CLOSE', markersize=20, markerfacecolor='lightcoral'),
+    plt.Line2D([0], [0], marker='s', color='w', label='LIKELY WET/OPEN', markersize=20, markerfacecolor='gold'),
+    plt.Line2D([0], [0], marker='s', color='w', label='LIKELY OPEN', markersize=20, markerfacecolor='lightgreen'),
+    plt.Line2D([0], [0], marker='s', color='w', label='DEFINITE OPEN', markersize=20, markerfacecolor='darkgreen'),
+    plt.Line2D([0], [0], marker='s', color='w', label='Error (Uncommon)', markersize=20, markerfacecolor='black')
 ]
 
 # plt.legend(handles=legend_elements, loc='upper right')
 
-# # Set labels and title
-# plt.xlabel('Timestamp')
+plt.legend(handles=legend_elements, loc='center left', bbox_to_anchor=(1, 0.5))
+plt.xlabel('P24 Hour Classifications')
 # plt.ylabel('Trail')
 # plt.title('Trail Status Over Time')
+today_date_time = datetime.today().strftime('%Y/%m/%d %I:%M %p')
+plt.title(f"CORA Automated Trail Status Over Time: Last Updated ({today_date_time})", fontsize=18, pad=20)
 
-# plt.show()
-
-plt.legend(handles=legend_elements, loc='upper right')
-plt.xlabel('Timestamp')
-plt.ylabel('Trail')
-plt.title('Trail Status Over Time')
+plt.xticks(rotation=90)
+plt.yticks(fontsize=12)
 plt.savefig('trail_status_plot.png')  # Save the plot as an image file
+
+filename_local = 'trail_status_plot_for_s3.png'
+filename_s3 = 'cora_trail_status_plot.png'
+plt.savefig(filename_local, dpi=300, bbox_inches='tight')  # Note the change here from fig.savefig to plt.savefig
+s3.upload_file(filename_local, bucket_name, filename_s3, ExtraArgs={'ACL': 'public-read'})  # Uploading the second plot
+
+print("Trail Status Image sent to S3")
+
 plt.close()
 
 
