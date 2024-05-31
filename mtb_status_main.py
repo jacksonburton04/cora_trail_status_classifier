@@ -575,6 +575,13 @@ def trail_status(row):
 
         # Convert the list to a DataFrame
         df_status_counts = pd.DataFrame(status_counts)
+
+        # Add a count of X to 'LIKELY WET/OPEN' before calculation
+        # Doing this to make the algorithim more conservative and less prone towards creating DEFINITE Classifications
+        # In other words, make the algorithim have to "fight" a bit more to make definite conclusions.
+        # This will artificially bring down the weighted average scores, and make LIKELY WET/OPEN Classifications more common
+        df_status_counts.loc[df_status_counts['status'] == 'LIKELY WET/OPEN', 'count'] += 3
+        
         print("#################")
         print("DF STATUS COUNTS", df_status_counts.head(5))
 
@@ -586,12 +593,6 @@ def trail_status(row):
             'LIKELY OPEN': 2,
             'DEFINITE OPEN': 1
         }
-
-        # Add a count of X to 'LIKELY WET/OPEN' before calculation
-        # Doing this to make the algorithim more conservative and less prone towards creating DEFINITE Classifications
-            # In other words, make the algorithim have to "fight" a bit more to make definite conclusions.
-        # This will artificially bring down the weighted average scores, and make LIKELY WET/OPEN Classifications more common
-        df_status_counts.loc[df_status_counts['status'] == 'LIKELY WET/OPEN', 'count'] += 3
 
         # Calculate the weighted average score
         total_weighted_score = 0
