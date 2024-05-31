@@ -521,13 +521,13 @@ def trail_status(row):
             if greater_than['prcp_1d'][status] <= prcp_values['prcp_1d'] <= less_than['prcp_1d'][status]:
                 count += 0.75
             if greater_than['prcp_2d'][status] <= prcp_values['prcp_2d'] <= less_than['prcp_2d'][status]:
-                count += 1
+                count += 1.25
             if greater_than['prcp_3d'][status] <= prcp_values['prcp_3d'] <= less_than['prcp_3d'][status]:
-                count += 1
+                count += 1.25
             if greater_than['prcp_5d'][status] <= prcp_values['prcp_5d'] <= less_than['prcp_5d'][status]:
                 count += 1.25
             if greater_than['prcp_7d'][status] <= prcp_values['prcp_7d'] <= less_than['prcp_7d'][status]:
-                count += 0.75
+                count += 1
 
             status_counts.append({'status': status, 'count': count})
 
@@ -580,7 +580,7 @@ def trail_status(row):
         # Doing this to make the algorithim more conservative and less prone towards creating DEFINITE Classifications
         # In other words, make the algorithim have to "fight" a bit more to make definite conclusions.
         # This will artificially bring down the weighted average scores, and make LIKELY WET/OPEN Classifications more common
-        df_status_counts.loc[df_status_counts['status'] == 'LIKELY WET/OPEN', 'count'] += 3
+        df_status_counts.loc[df_status_counts['status'] == 'LIKELY WET/OPEN', 'count'] += 1.5
         
         print("#################")
         print("DF STATUS COUNTS", df_status_counts.head(5))
