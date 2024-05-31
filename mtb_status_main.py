@@ -512,18 +512,21 @@ def trail_status(row):
         for status in status_levels:
             count = 0
 
+            # CURRENT 1D variables add up to ---> 2.5 MAX
+            # CURRENT other variables add up to 4.5 MAX
+            
             if greater_than['prcp_4h'][status] <= prcp_values['prcp_4h'] <= less_than['prcp_4h'][status]:
-                count += 0.75
+                count += 0.5
             if greater_than['prcp_8h'][status] <= prcp_values['prcp_8h'] <= less_than['prcp_8h'][status]:
-                count += 0.75
+                count += 0.5
             if greater_than['prcp_16h'][status] <= prcp_values['prcp_16h'] <= less_than['prcp_16h'][status]:
-                count += 0.75
+                count += 0.5
             if greater_than['prcp_1d'][status] <= prcp_values['prcp_1d'] <= less_than['prcp_1d'][status]:
-                count += 0.75
+                count += 1
             if greater_than['prcp_2d'][status] <= prcp_values['prcp_2d'] <= less_than['prcp_2d'][status]:
                 count += 1.25
             if greater_than['prcp_3d'][status] <= prcp_values['prcp_3d'] <= less_than['prcp_3d'][status]:
-                count += 1.25
+                count += 1
             if greater_than['prcp_5d'][status] <= prcp_values['prcp_5d'] <= less_than['prcp_5d'][status]:
                 count += 1.25
             if greater_than['prcp_7d'][status] <= prcp_values['prcp_7d'] <= less_than['prcp_7d'][status]:
