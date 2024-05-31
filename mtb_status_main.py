@@ -591,7 +591,7 @@ def trail_status(row):
         # Doing this to make the algorithim more conservative and less prone towards creating DEFINITE Classifications
             # In other words, make the algorithim have to "fight" a bit more to make definite conclusions.
         # This will artificially bring down the weighted average scores, and make LIKELY WET/OPEN Classifications more common
-        df_status_counts.loc[df_status_counts['status'] == 'LIKELY WET/OPEN', 'count'] += 2
+        df_status_counts.loc[df_status_counts['status'] == 'LIKELY WET/OPEN', 'count'] += 3
 
         # Calculate the weighted average score
         total_weighted_score = 0
