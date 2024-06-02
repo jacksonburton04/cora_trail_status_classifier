@@ -279,10 +279,12 @@ weather_data_daily_append = weather_data_main[
 }).reset_index()
 weather_data_daily = pd.concat([weather_data_daily, weather_data_daily_append], ignore_index=True)
 
-print("Hourly Data:\n", weather_data_hourly.head())
-print("Daily Data:\n", weather_data_daily.head())
-print("New Daily Data to Append:\n", weather_data_daily_append.head())
-print("Updated Daily Data:\n", weather_data_daily.head())
+print("Hourly Data:\n", weather_data_hourly.sort_values(["trail", "DATE"], ascending = [False, False]).head(15))
+print("Daily Data:\n", weather_data_daily.sort_values(["trail", "DATE"], ascending = [False, False]).head(15))
+print("New Daily Data to Append:\n", weather_data_daily_append.sort_values(["trail", "DATE"], ascending = [False, False]).head(15))
+print("Updated Daily Data:\n", weather_data_daily.sort_values(["trail", "DATE"], ascending = [False, False]).head(15))
+
+print("TEST - JB - 2024-06-02")
 
 
 def calculate_rolling_metrics_daily(daily_df, lookback_days_list):
@@ -391,7 +393,7 @@ df_class = final_df[['trail',
 
 
 print("Dataframe for Classification")
-# print(df_class.head(25))
+print(df_class.head(15))
 
 #####
 #START CLASSIFICATION
