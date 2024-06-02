@@ -279,10 +279,10 @@ weather_data_daily_append = weather_data_main[
 }).reset_index()
 weather_data_daily = pd.concat([weather_data_daily, weather_data_daily_append], ignore_index=True)
 
-print("Hourly Data:\n", weather_data_hourly.sort_values(["trail", "DATE"], ascending = [False, False]).head(15))
-print("Daily Data:\n", weather_data_daily.sort_values(["trail", "DATE"], ascending = [False, False]).head(15))
-print("New Daily Data to Append:\n", weather_data_daily_append.sort_values(["trail", "DATE"], ascending = [False, False]).head(15))
-print("Updated Daily Data:\n", weather_data_daily.sort_values(["trail", "DATE"], ascending = [False, False]).head(15))
+print("Hourly Data:\n", weather_data_hourly.sort_values(["trail", "DATE"], ascending = [False, False]).head(35))
+print("Daily Data:\n", weather_data_daily.sort_values(["trail", "DATE"], ascending = [False, False]).head(35))
+print("New Daily Data to Append:\n", weather_data_daily_append.sort_values(["trail", "DATE"], ascending = [False, False]).head(35))
+print("Updated Daily Data:\n", weather_data_daily.sort_values(["trail", "DATE"], ascending = [False, False]).head(35))
 
 print("TEST - JB - 2024-06-02")
 
@@ -426,9 +426,9 @@ def adjust_prcp(prcp, tmax, dew_point, trail):
     if dew_point_temp_diff < 5:
         prcp *= 1.3
     elif dew_point_temp_diff < 10:
-        prcp *= 1.15  
+        prcp *= 1.2
     elif dew_point_temp_diff < 15:
-        prcp *= 1.0  
+        prcp *= 1.1  
     elif dew_point_temp_diff < 20:
         prcp *= 0.95
     elif dew_point_temp_diff < 25:
@@ -506,8 +506,8 @@ def trail_status(row):
             greater_than[dim][status] = df_gsheet_if_statements.query(f"`Metric Direction` == 'Greater than' and `PRCP Dimension` == '{dim}'")[status].values[0]
             less_than[dim][status] = df_gsheet_if_statements.query(f"`Metric Direction` == 'Less than' and `PRCP Dimension` == '{dim}'")[status].values[0]
 
-    print("DIMENSIONS", dimensions)
-    print("dim", dim)
+    # print("DIMENSIONS", dimensions)
+    # print("dim", dim)
 
     def get_trail_status(prcp_values):
         
@@ -518,21 +518,22 @@ def trail_status(row):
 
             # CURRENT 1D variables add up to ---> 2.5 MAX
             # CURRENT other variables add up to 4.5 MAX
+            # So, about 1/3 of logic depends on past 1 day. About 2/3 of logic looks further back
             
             if greater_than['prcp_4h'][status] <= prcp_values['prcp_4h'] <= less_than['prcp_4h'][status]:
-                count += 0.5
+                count += 0.25
             if greater_than['prcp_8h'][status] <= prcp_values['prcp_8h'] <= less_than['prcp_8h'][status]:
                 count += 0.5
             if greater_than['prcp_16h'][status] <= prcp_values['prcp_16h'] <= less_than['prcp_16h'][status]:
-                count += 0.5
+                count += 0.25
             if greater_than['prcp_1d'][status] <= prcp_values['prcp_1d'] <= less_than['prcp_1d'][status]:
                 count += 1
             if greater_than['prcp_2d'][status] <= prcp_values['prcp_2d'] <= less_than['prcp_2d'][status]:
-                count += 1.25
+                count += 1.5
             if greater_than['prcp_3d'][status] <= prcp_values['prcp_3d'] <= less_than['prcp_3d'][status]:
                 count += 1
             if greater_than['prcp_5d'][status] <= prcp_values['prcp_5d'] <= less_than['prcp_5d'][status]:
-                count += 1.25
+                count += 1
             if greater_than['prcp_7d'][status] <= prcp_values['prcp_7d'] <= less_than['prcp_7d'][status]:
                 count += 1
 
@@ -548,7 +549,7 @@ def trail_status(row):
         df_status_counts.loc[df_status_counts['status'] == 'LIKELY WET/OPEN', 'count'] += 1.5
         
         print("#################")
-        print("DF STATUS COUNTS", df_status_counts.head(5))
+        # print("DF STATUS COUNTS", df_status_counts.head(5))
 
         # Status scores as provided
         status_scores = {
@@ -574,7 +575,7 @@ def trail_status(row):
 
         # Find the closest status based on the weighted average score
         closest_status = min(status_scores, key=lambda k: abs(status_scores[k] - weighted_average_score))
-        print("CLOSEST STATUS", closest_status)
+        # print("CLOSEST STATUS", closest_status)
         trail_status = closest_status
         # df_status_counts['trail_status'] = trail_status
 
