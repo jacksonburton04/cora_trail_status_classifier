@@ -167,6 +167,7 @@ for index, row in df_trail_locations.iterrows():
                 precip_inches += (hour['rain']['1h'] / 25.4)
             if 'snow' in hour and '1h' in hour['snow']:
                 precip_inches += (hour['snow']['1h'] / 25.4)
+            print("hour + PRCP", hour, precip_inches, trail)
             humidity = hour['humidity']
             temp = hour['temp']
             dew_point = calculate_dew_point(temp, humidity)
@@ -217,6 +218,7 @@ else:
             try:
                 temp_max = response['temperature']['max']
                 precipitation = response['precipitation']['total'] * 0.0393701
+                print("date + PRCP", date_var, precipitation, trail)
                 dew_point = calculate_dew_point(response['temperature']['afternoon'], response['humidity']['afternoon'])
                 data.append([trail, date_var, temp_max, precipitation, dew_point]) #snow_flag
             except KeyError as e:
@@ -389,7 +391,7 @@ df_class = final_df[['trail',
 
 
 print("Dataframe for Classification")
-print(df_class.head(25))
+# print(df_class.head(25))
 
 #####
 #START CLASSIFICATION
