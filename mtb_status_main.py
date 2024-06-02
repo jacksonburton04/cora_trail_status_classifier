@@ -404,11 +404,11 @@ trail_adjustments = dict(zip(df_gsheet_trail_adjustments['Trail'], df_gsheet_tra
 def adjust_prcp(prcp, tmax, dew_point, trail):
     # Adjust based on TMAX
     if tmax > 90:
-        prcp *= 0.75
-    elif tmax > 80:
-        prcp *= 0.85   
+        prcp *= 0.90
+    elif tmax > 85:
+        prcp *= 0.95   
     elif tmax > 70:
-        prcp *= 0.95  
+        prcp *= 1.0 
     elif tmax <= 45:
         prcp *= 1.3
     elif tmax <= 55:
@@ -420,15 +420,15 @@ def adjust_prcp(prcp, tmax, dew_point, trail):
 
     # Adjust based on DEW_POINT DIFF
     if dew_point_temp_diff < 5:
-        prcp *= 1.2
+        prcp *= 1.3
     elif dew_point_temp_diff < 10:
-        prcp *= 1.1  
+        prcp *= 1.15  
     elif dew_point_temp_diff < 15:
         prcp *= 1.0  
     elif dew_point_temp_diff < 20:
-        prcp *= 0.9
+        prcp *= 0.95
     elif dew_point_temp_diff < 25:
-        prcp *= 0.8  
+        prcp *= 0.9 
     
     # Apply trail adjustment if the trail is in the adjustment list
     if trail in trail_adjustments:
@@ -533,48 +533,6 @@ def trail_status(row):
                 count += 1
 
             status_counts.append({'status': status, 'count': count})
-
-            # # Flag to skip the current status if the 8 hour condition is not met
-            # # Reset to false every time
-            # skip_status = False
-
-            # # If past 8 hour PRCP exceeds MAX, then SKIP scoring this status
-            # if (prcp_values['prcp_8h'] >= greater_than['prcp_8h'][status]):
-            #     skip_status = True
-            
-            # print("SKIP STATUS: ", skip_status)
-
-            # if not skip_status and greater_than['prcp_4h'][status] <= prcp_values['prcp_4h'] <= less_than['prcp_4h'][status]:
-            #     count += 0.34
-            #     print(status, " = ", count)
-            # if not skip_status and greater_than['prcp_8h'][status] <= prcp_values['prcp_8h'] <= less_than['prcp_8h'][status]:
-            #     count += 0.32
-            #     print(status, " = ", count)
-            # if not skip_status and greater_than['prcp_16h'][status] <= prcp_values['prcp_16h'] <= less_than['prcp_16h'][status]:
-            #     count += 0.34
-            #     print(status, " = ", count)
-            # if not skip_status and greater_than['prcp_1d'][status] <= prcp_values['prcp_1d'] <= less_than['prcp_1d'][status]:
-            #     count += 0.5
-            #     print(status, " = ", count)
-            # if not skip_status and greater_than['prcp_2d'][status] <= prcp_values['prcp_2d'] <= less_than['prcp_2d'][status]:
-            #     count += 2
-            #     print(status, " = ", count)
-            # if not skip_status and greater_than['prcp_3d'][status] <= prcp_values['prcp_3d'] <= less_than['prcp_3d'][status]:
-            #     count += 1
-            #     print(status, " = ", count)
-            # if not skip_status and greater_than['prcp_5d'][status] <= prcp_values['prcp_5d'] <= less_than['prcp_5d'][status]:
-            #     count += 0.75
-            #     print(status, " = ", count)
-            # if not skip_status and greater_than['prcp_7d'][status] <= prcp_values['prcp_7d'] <= less_than['prcp_7d'][status]:
-            #     count += 0.75
-            #     print(status, " = ", count)
-
-            # # If the status was not skipped, append the status and its count to the list
-            # if not skip_status:
-            #     status_counts.append({'status': status, 'count': count})
-            #     print("Status #: ", status, count)
-
-
 
         # Convert the list to a DataFrame
         df_status_counts = pd.DataFrame(status_counts)
