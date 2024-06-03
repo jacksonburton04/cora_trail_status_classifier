@@ -28,8 +28,8 @@ from utils import *
 
 warnings.filterwarnings('ignore')
 
-config_file_path = 'data/dev_config.json'
-# config_file_path = '/root/cora_trail_status_classifier/data/prod_config.json'
+# config_file_path = 'data/dev_config.json'
+config_file_path = '/root/cora_trail_status_classifier/data/prod_config.json'
 
 with open(config_file_path, 'r') as config_file:
     config = json.load(config_file)
@@ -124,7 +124,12 @@ def accuweather_data(df_trail_locations, api_key):
         
         # Fetch hourly data
         hourly_url = f"http://dataservice.accuweather.com/currentconditions/v1/{location_key}/historical"
-        params = {'apikey': api_key}
+        params = {
+                'apikey': api_key,
+                'language': 'en-us',  # Specify the language
+                'details': 'true'     # Include full details in the response
+            }
+            
         response = requests.get(hourly_url, params=params)
         # print(response)
         response.raise_for_status()
@@ -140,6 +145,7 @@ def accuweather_data(df_trail_locations, api_key):
                 'Trail': trail,
                 'MAX TEMPERATURE': hour_data['Temperature']['Imperial']['Value'],
                 'TOTAL PRECIPITATION': hour_data.get('PrecipitationSummary', {}).get('Precipitation', {}).get('Imperial', {}).get('Value', 0),
+                'DEW_POINT': hour_data['DewPoint']['Imperial']['Value'],
                 'run_datetime': run_datetime
             }
             all_data.append(data)
@@ -191,39 +197,32 @@ print("###########################")
 print("Open Weather")
 print(hourly_weather.head(5))
 
-# Filter for the past two days
-hourly_weather['HOUR'] = pd.to_datetime(hourly_weather['HOUR'])
-hourly_weather['DATE'] = hourly_weather['HOUR'].dt.strftime('%Y-%m-%d')
-hourly_weather['HOUR'] = hourly_weather['HOUR'].dt.strftime('%H')
-# Define the time range for the past two days
-start_date = datetime.now() - timedelta(days=2)
-end_date = datetime.now()
-hourly_weather = hourly_weather[(pd.to_datetime(hourly_weather['DATE']) >= start_date) & (pd.to_datetime(hourly_weather['DATE']) <= end_date)]
-
-print(hourly_weather.sort_values(["DATE","HOUR"], ascending = [False, False]).head(20))
-
 ########
 # END
 #########
 
 
-pickle_file = 'historical_one_week_all_trails.pickle'
+# pickle_file = 'historical_one_week_all_trails.pickle'
 
 
-historical_one_week_all_trails = fetch_historical_weather_data(pickle_file, df_trail_locations, openweather_api_key)
+# historical_one_week_all_trails = fetch_historical_weather_data(pickle_file, df_trail_locations, openweather_api_key)
 
-historical_one_week_all_trails.to_csv("historical_one_week_all_trails.csv")
-hourly_weather.to_csv("hourly_weather.csv")
+# historical_one_week_all_trails.to_csv("historical_one_week_all_trails.csv")
 
 
-yesterday = datetime.now() - timedelta(days=1)
-yesterday_date_str = yesterday.strftime('%Y-%m-%d')
-historical_one_week_all_trails['DATE'] = pd.to_datetime(historical_one_week_all_trails['DATE'], format='%Y-%m-%d')
-historical_one_week_all_trails_filtered = historical_one_week_all_trails[historical_one_week_all_trails['DATE'] < yesterday]
+# yesterday = datetime.now() - timedelta(days=1)
+# yesterday_date_str = yesterday.strftime('%Y-%m-%d')
+# historical_one_week_all_trails['DATE'] = pd.to_datetime(historical_one_week_all_trails['DATE'], format='%Y-%m-%d')
+# historical_one_week_all_trails_filtered = historical_one_week_all_trails[historical_one_week_all_trails['DATE'] < yesterday]
 
 # COMBINE WEATHER DFs
-weather_append = pd.concat([hourly_weather, historical_one_week_all_trails_filtered])
-weather_append = weather_append.drop_duplicates(subset=['DATE', 'Trail', 'HOUR', 'TOTAL PRECIPITATION'], keep='first')
+# weather_append = pd.concat([hourly_weather, historical_one_week_all_trails_filtered])
+hourly_accuweather['DATE'] = hourly_accuweather['HOUR'].dt.strftime('%Y-%m-%d')
+hourly_accuweather['HOUR'] = hourly_accuweather['HOUR'].dt.strftime('%H')
+hourly_accuweather.to_csv("hourly_accuweather.csv")
+
+
+weather_append = hourly_accuweather.drop_duplicates(subset=['DATE', 'Trail', 'HOUR', 'TOTAL PRECIPITATION'], keep='first')
 weather_append['DATE'] = pd.to_datetime(weather_append['DATE'])
 weather_append['DATE'] = weather_append['DATE'].dt.date
 print("PRINTING NEW WEATHER DATA #######")
@@ -244,48 +243,34 @@ weather_data_main.to_csv("weather_data_main.csv")
 ### ROLLING METRICS CALCULATED
 
 weather_data_hourly = weather_data_main[weather_data_main["HOUR"].notnull()]
-weather_data_daily = weather_data_main[weather_data_main["HOUR"].isnull()]
+# weather_data_daily = weather_data_main[weather_data_main["HOUR"].isnull()]
 
 yesterday = pd.Timestamp.now().normalize() - pd.Timedelta(days=1)
-# Filter data for yesterday's date and group by DATE
-weather_data_daily_append = weather_data_main[
-    weather_data_main['DATE'] == yesterday
-].groupby(['DATE','trail']).agg({
-    'PRCP': 'sum',
-    'TMAX': 'max',
-    'DEW_POINT': 'max'
-}).reset_index()
-weather_data_daily = pd.concat([weather_data_daily, weather_data_daily_append], ignore_index=True)
 
 print("Hourly Data:\n", weather_data_hourly.sort_values(["trail", "DATE"], ascending = [False, False]).head(35))
-print("Daily Data:\n", weather_data_daily.sort_values(["trail", "DATE"], ascending = [False, False]).head(35))
-print("New Daily Data to Append:\n", weather_data_daily_append.sort_values(["trail", "DATE"], ascending = [False, False]).head(35))
-print("Updated Daily Data:\n", weather_data_daily.sort_values(["trail", "DATE"], ascending = [False, False]).head(35))
-
-print("TEST - JB - 2024-06-02")
-
-# Example usage:
-lookback_days_list = [1, 2, 3, 5, 7, 10]
-lookback_hours_list = [4, 8, 16]
+lookback_hours_list = [4, 8, 16, 24, 48, 72, 96, 120, 144, 168]
 
 # Assume weather_data_hourly and weather_data_daily are already defined
-daily_df = calculate_rolling_metrics_daily(weather_data_daily, lookback_days_list)
+# daily_df = calculate_rolling_metrics_daily(weather_data_daily, lookback_days_list)
 hourly_df = calculate_rolling_metrics_hourly(weather_data_hourly, lookback_hours_list)
 
 # daily_df_trim = daily_df.groupby('trail', as_index=False).apply(lambda x: x.loc[x['DATE'].idxmax()]).reset_index(drop=True)
-daily_df_trim = daily_df.sort_values(by='DATE', ascending=False).drop_duplicates(subset = 'trail').reset_index(drop=True)
+# daily_df_trim = daily_df.sort_values(by='DATE', ascending=False).drop_duplicates(subset = 'trail').reset_index(drop=True)
 hourly_df_trim = hourly_df.sort_values(by=['DATE', 'HOUR'], ascending=[False, False]).drop_duplicates(subset = 'trail').reset_index(drop=True)
-final_df = pd.merge(daily_df_trim, hourly_df_trim, on='trail')
+# final_df = pd.merge(daily_df_trim, hourly_df_trim, on='trail')
+final_df = hourly_df_trim.copy()
+print("FINAL DF")
+print(final_df.head(10))
 final_df.to_csv("final_df.csv")
 
 ### 
 
 df_class = final_df[['trail', 
-                     'PRCP_1d', 'PRCP_2d', 'PRCP_3d', 'PRCP_5d', 'PRCP_7d', 'PRCP_10d', 
+                     'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 
                      'PRCP_4h', 'PRCP_8h', 'PRCP_16h',
-                     'TMAX_1d', 'TMAX_2d', 'TMAX_3d', 'TMAX_5d', 'TMAX_7d', 'TMAX_10d', 
+                     'TMAX_24h', 'TMAX_48h', 'TMAX_72h', 'TMAX_120h', 'TMAX_168h', 
                      'TMAX_4h', 'TMAX_8h', 'TMAX_16h',
-                     'DEW_POINT_1d', 'DEW_POINT_2d', 'DEW_POINT_3d', 'DEW_POINT_5d', 'DEW_POINT_7d', 'DEW_POINT_10d', 
+                     'DEW_POINT_24h', 'DEW_POINT_48h', 'DEW_POINT_72h', 'DEW_POINT_120h', 'DEW_POINT_168h', 
                      'DEW_POINT_4h', 'DEW_POINT_8h', 'DEW_POINT_16h'
                      ]]
 
@@ -349,38 +334,38 @@ def trail_status(row):
     prcp_4h = row['PRCP_4h']
     prcp_8h = row['PRCP_8h']
     prcp_16h = row['PRCP_16h']
-    prcp_1d = row['PRCP_1d']
-    prcp_2d = row['PRCP_2d']
-    prcp_3d = row['PRCP_3d']
-    prcp_5d = row['PRCP_5d']
-    prcp_7d = row['PRCP_7d']
+    prcp_24h = row['PRCP_24h']
+    prcp_48h = row['PRCP_48h']
+    prcp_72h = row['PRCP_72h']
+    prcp_120h = row['PRCP_120h']
+    prcp_168h = row['PRCP_168h']
     tmax_4h = row['TMAX_4h']
     tmax_8h = row['TMAX_8h']
     tmax_16h = row['TMAX_16h']
-    tmax_1d = row['TMAX_1d']
-    tmax_2d = row['TMAX_2d']
-    tmax_3d = row['TMAX_3d']
-    tmax_5d = row['TMAX_5d']
-    tmax_7d = row['TMAX_7d']
+    tmax_24h = row['TMAX_24h']
+    tmax_48h = row['TMAX_48h']
+    tmax_72h = row['TMAX_72h']
+    tmax_120h = row['TMAX_120h']
+    tmax_168h = row['TMAX_168h']
     dew_point_4h = row['DEW_POINT_4h']
     dew_point_8h = row['DEW_POINT_8h']
     dew_point_16h = row['DEW_POINT_16h']
-    dew_point_1d = row['DEW_POINT_1d']
-    dew_point_2d = row['DEW_POINT_2d']
-    dew_point_3d = row['DEW_POINT_3d']
-    dew_point_5d = row['DEW_POINT_5d']
-    dew_point_7d = row['DEW_POINT_7d']
+    dew_point_24h = row['DEW_POINT_24h']
+    dew_point_48h = row['DEW_POINT_48h']
+    dew_point_72h = row['DEW_POINT_72h']
+    dew_point_120h = row['DEW_POINT_120h']
+    dew_point_168h = row['DEW_POINT_168h']
     trail = row['trail']
 
     # Adjust precipitation values
     prcp_4h = adjust_prcp(prcp_4h, tmax_4h, dew_point_4h, trail)
     prcp_8h = adjust_prcp(prcp_8h, tmax_8h, dew_point_8h, trail)
     prcp_16h = adjust_prcp(prcp_16h, tmax_16h, dew_point_16h, trail)
-    prcp_1d = adjust_prcp(prcp_1d, tmax_1d, dew_point_1d, trail)
-    prcp_2d = adjust_prcp(prcp_2d, tmax_2d, dew_point_2d, trail)
-    prcp_3d = adjust_prcp(prcp_3d, tmax_3d, dew_point_3d, trail)
-    prcp_5d = adjust_prcp(prcp_5d, tmax_5d, dew_point_5d, trail)
-    prcp_7d = adjust_prcp(prcp_7d, tmax_7d, dew_point_7d, trail)
+    prcp_24h = adjust_prcp(prcp_24h, tmax_24h, dew_point_24h, trail)
+    prcp_48h = adjust_prcp(prcp_48h, tmax_48h, dew_point_48h, trail)
+    prcp_72h = adjust_prcp(prcp_72h, tmax_72h, dew_point_72h, trail)
+    prcp_120h = adjust_prcp(prcp_120h, tmax_120h, dew_point_120h, trail)
+    prcp_168h = adjust_prcp(prcp_168h, tmax_168h, dew_point_168h, trail)
 
     # sheet_id = '1IrZgmVjHmFkdxxM_65XzKW_nt8p8LCIHgkqtbjY4QJE'
     # sheet_name = 'if_statements'
@@ -391,7 +376,7 @@ def trail_status(row):
 
     # status_levels = ['DEFINITE CLOSE', 'LIKELY CLOSE', 'LIKELY WET/OPEN', 'LIKELY OPEN', 'DEFINITE OPEN']
 
-    dimensions = ['prcp_4h', 'prcp_8h', 'prcp_16h', 'prcp_1d', 'prcp_2d', 'prcp_3d', 'prcp_5d', 'prcp_7d']
+    dimensions = ['prcp_4h', 'prcp_8h', 'prcp_16h', 'prcp_24h', 'prcp_48h', 'prcp_72h', 'prcp_120h', 'prcp_168h']
     status_levels = ['DEFINITE CLOSE', 'LIKELY CLOSE', 'LIKELY WET/OPEN', 'LIKELY OPEN', 'DEFINITE OPEN']
 
     # Initialize dictionaries to store the threshold values
@@ -403,37 +388,41 @@ def trail_status(row):
         for status in status_levels:
             greater_than[dim][status] = df_gsheet_if_statements.query(f"`Metric Direction` == 'Greater than' and `PRCP Dimension` == '{dim}'")[status].values[0]
             less_than[dim][status] = df_gsheet_if_statements.query(f"`Metric Direction` == 'Less than' and `PRCP Dimension` == '{dim}'")[status].values[0]
+            # print(status, greater_than[dim][status], less_than[dim][status])
 
     # print("DIMENSIONS", dimensions)
     # print("dim", dim)
 
     def get_trail_status(prcp_values):
+
+        # Debugging: Print prcp_values before accessing
+        # print("prcp_values:", prcp_values)
+        # print("prcp_values keys:", prcp_values.keys())
         
         status_counts = []
 
         for status in status_levels:
             count = 0
 
-            # CURRENT 1D variables add up to ---> 2.5 MAX
-            # CURRENT other variables add up to 4.5 MAX
-            # So, about 1/3 of logic depends on past 1 day. About 2/3 of logic looks further back
-            
-            if greater_than['prcp_4h'][status] <= prcp_values['prcp_4h'] <= less_than['prcp_4h'][status]:
-                count += 0.25
-            if greater_than['prcp_8h'][status] <= prcp_values['prcp_8h'] <= less_than['prcp_8h'][status]:
-                count += 0.5
-            if greater_than['prcp_16h'][status] <= prcp_values['prcp_16h'] <= less_than['prcp_16h'][status]:
-                count += 0.25
-            if greater_than['prcp_1d'][status] <= prcp_values['prcp_1d'] <= less_than['prcp_1d'][status]:
-                count += 1
-            if greater_than['prcp_2d'][status] <= prcp_values['prcp_2d'] <= less_than['prcp_2d'][status]:
-                count += 1.5
-            if greater_than['prcp_3d'][status] <= prcp_values['prcp_3d'] <= less_than['prcp_3d'][status]:
-                count += 1
-            if greater_than['prcp_5d'][status] <= prcp_values['prcp_5d'] <= less_than['prcp_5d'][status]:
-                count += 1
-            if greater_than['prcp_7d'][status] <= prcp_values['prcp_7d'] <= less_than['prcp_7d'][status]:
-                count += 1
+            try:
+                if greater_than['prcp_4h'][status] <= prcp_values['prcp_4h'] <= less_than['prcp_4h'][status]:
+                    count += 0.25
+                if greater_than['prcp_8h'][status] <= prcp_values['prcp_8h'] <= less_than['prcp_8h'][status]:
+                    count += 0.5
+                if greater_than['prcp_16h'][status] <= prcp_values['prcp_16h'] <= less_than['prcp_16h'][status]:
+                    count += 0.25
+                if greater_than['prcp_24h'][status] <= prcp_values['prcp_24h'] <= less_than['prcp_24h'][status]:
+                    count += 1
+                if greater_than['prcp_48h'][status] <= prcp_values['prcp_48h'] <= less_than['prcp_48h'][status]:
+                    count += 1.5
+                if greater_than['prcp_72h'][status] <= prcp_values['prcp_72h'] <= less_than['prcp_72h'][status]:
+                    count += 1
+                if greater_than['prcp_120h'][status] <= prcp_values['prcp_120h'] <= less_than['prcp_120h'][status]:
+                    count += 1
+                if greater_than['prcp_168h'][status] <= prcp_values['prcp_168h'] <= less_than['prcp_168h'][status]:
+                    count += 1
+            except KeyError as e:
+                print(f"KeyError: {e}. prcp_values: {prcp_values}")
 
             status_counts.append({'status': status, 'count': count})
 
@@ -483,19 +472,19 @@ def trail_status(row):
         'prcp_4h': prcp_4h,
         'prcp_8h': prcp_8h,
         'prcp_16h': prcp_16h,
-        'prcp_1d': prcp_1d,
-        'prcp_2d': prcp_2d,
-        'prcp_3d': prcp_3d,
-        'prcp_5d': prcp_5d,
-        'prcp_7d': prcp_7d
+        'prcp_24h': prcp_24h,
+        'prcp_48h': prcp_48h,
+        'prcp_72h': prcp_72h,
+        'prcp_120h': prcp_120h,
+        'prcp_168h': prcp_168h
     }
-    print("processing this row of data", row[['trail', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_1d', 'PRCP_2d', 'PRCP_3d', 'PRCP_5d', 'PRCP_7d']])
+    print("processing this row of data", row[['trail', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h']])
     print("Result: ", get_trail_status(prcp_values))
     return get_trail_status(prcp_values)
 
 # Your existing script processing
 final_df['trail_status'] = final_df.apply(trail_status, axis=1)
-print(final_df[['trail', 'PRCP_1d', 'PRCP_8h', 'PRCP_2d', 'PRCP_16h', 'PRCP_3d', 'PRCP_5d', 'PRCP_7d', 'TMAX_1d', 'DEW_POINT_1d', 'trail_status']])
+# print(final_df[['trail', 'PRCP_24h', 'PRCP_8h', 'PRCP_48h', 'PRCP_16h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'TMAX_24h', 'DEW_POINT_24h', 'trail_status']])
 
 
 # Initialize the S3 client
@@ -503,10 +492,7 @@ s3_client = boto3.client('s3')
 bucket_name = 'mtb-trail-condition-predictions'
 log_file_key = 'trail_conditions_log.csv'
 
-# Your existing script processing
-final_df['trail_status'] = final_df.apply(trail_status, axis=1)
-print(final_df[['trail', 'PRCP_1d', 'PRCP_8h', 'PRCP_2d', 'PRCP_16h', 'PRCP_3d', 'PRCP_5d', 'PRCP_7d', 'TMAX_1d', 'DEW_POINT_1d', 'trail_status']])
-
+#
 def get_current_timestamp():
     return datetime.now().strftime('%Y-%m-%d %H:00:00')
 
@@ -516,7 +502,7 @@ def load_existing_log():
         log_df = pd.read_csv(io.BytesIO(obj['Body'].read()))
         return log_df
     except s3_client.exceptions.NoSuchKey:
-        return pd.DataFrame(columns=['trail', 'PRCP_1d', 'PRCP_8h', 'PRCP_2d', 'PRCP_16h', 'PRCP_3d', 'PRCP_5d', 'PRCP_7d', 'TMAX_1d', 'DEW_POINT_1d', 'trail_status', 'timestamp'])
+        return pd.DataFrame(columns=['trail', 'PRCP_24h', 'PRCP_8h', 'PRCP_48h', 'PRCP_16h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'TMAX_24h', 'DEW_POINT_24h', 'trail_status', 'timestamp'])
 
 def save_log_to_s3(log_df):
     csv_buffer = io.StringIO()
@@ -539,7 +525,7 @@ def append_to_log(final_df):
     return log_df
 
 # Append the final_df to log
-log_df = append_to_log(final_df[['trail', 'PRCP_1d', 'PRCP_8h', 'PRCP_2d', 'PRCP_16h', 'PRCP_3d', 'PRCP_5d', 'PRCP_7d', 'TMAX_1d', 'DEW_POINT_1d', 'trail_status']])
+log_df = append_to_log(final_df[['trail', 'PRCP_24h', 'PRCP_8h', 'PRCP_48h', 'PRCP_16h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'TMAX_24h', 'DEW_POINT_24h', 'trail_status']])
 
 #### VIEW LOG
 
