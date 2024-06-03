@@ -19,11 +19,17 @@ from matplotlib.colors import ListedColormap, BoundaryNorm
 import matplotlib.patches as mpatches
 import openai
 import io
+import math
+from cryptography.fernet import Fernet
+
+####### utils.py has bulky functions
+from utils import *
+##
 
 warnings.filterwarnings('ignore')
 
-# config_file_path = 'data/dev_config.json'
-config_file_path = '/root/cora_trail_status_classifier/data/prod_config.json'
+config_file_path = 'data/dev_config.json'
+# config_file_path = '/root/cora_trail_status_classifier/data/prod_config.json'
 
 with open(config_file_path, 'r') as config_file:
     config = json.load(config_file)
@@ -37,155 +43,161 @@ s3_client = boto3.client('s3')
 s3 = boto3.client('s3')
 bucket_name = 'mtb-trail-condition-predictions'
 
-### FUNCTIONS
-
-def get_weather_data(lat, lon, date, api_key):
-    base_url = "https://api.openweathermap.org/data/3.0/onecall/day_summary"
-    params = {
-        'lat': lat,
-        'lon': lon,
-        'date': date,
-        'appid': api_key,
-        'units': 'imperial'  # For Fahrenheit
-    }
-
-    response = requests.get(base_url, params=params)
-    return response.json()
-
-def calculate_dew_point(T, RH):
-    """
-    Calculate the dew point temperature given the temperature and relative humidity
-    using the Magnus formula.
-
-    Parameters:
-    T (float): the temperature in degrees Fahrenheit
-    RH (float): the relative humidity in percent
-
-    Returns:
-    float: the dew point temperature in degrees Fahrenheit
-    """
-    # Convert temperature from Fahrenheit to Celsius
-    T_c = (T - 32) * 5.0/9.0
-    
-    # Constants for the Magnus formula
-    a = 17.27
-    b = 237.7
-    
-    # Magnus formula for dew point in Celsius
-    alpha = ((a * T_c) / (b + T_c)) + math.log(RH/100.0)
-    dew_point_c = (b * alpha) / (a - alpha)
-    
-    # Convert dew point back to Fahrenheit
-    dew_point_f = (dew_point_c * 9.0/5.0) + 32
-    
-    return dew_point_f
-
-import math
-
-
 ### APIS (ENCRYPTED) 
+def load_api_key(encryption_key_path, encrypted_api_key_path):
+    with open(encryption_key_path, "rb") as f:
+        encryption_key = f.read()
+    cipher_suite = Fernet(encryption_key)
+    with open(encrypted_api_key_path, "rb") as f:
+        encrypted_api_key = f.read()
+    decrypted_api_key = cipher_suite.decrypt(encrypted_api_key)
+    return decrypted_api_key.decode()
 
-## OPEN WEATHER API
-from cryptography.fernet import Fernet
-with open("creds/encryption_openweather_key.txt", "rb") as f:
-    encryption_key = f.read()
-cipher_suite = Fernet(encryption_key)
-with open("creds/encrypted_openweather_api_key.txt", "rb") as f:
-    encrypted_api_key = f.read()
-decrypted_api_key = cipher_suite.decrypt(encrypted_api_key)
-api_key = decrypted_api_key.decode()
+def load_all_api_keys():
+    keys = {
+        "openweather_api_key": load_api_key("creds/encryption_openweather_key.txt", "creds/encrypted_openweather_api_key.txt"),
+        "gmail_api_key": load_api_key("creds/encryption_gmail_key.txt", "creds/encrypted_gmail_api_key.txt"),
+        "openai_api_key": load_api_key("creds/encryption_openai_key.txt", "creds/encrypted_openai_api_key.txt"),
+        "accuweather_api_key": load_api_key("creds/encryption_accuweather_key.txt", "creds/encrypted_accuweather_api_key.txt")
+    }
+    return keys
 
-## GMAIL API
-with open("creds/encryption_gmail_key.txt", "rb") as f:
-    encryption_key = f.read()
-cipher_suite = Fernet(encryption_key)
-with open("creds/encrypted_gmail_api_key.txt", "rb") as f:
-    encrypted_api_key = f.read()
-decrypted_api_key = cipher_suite.decrypt(encrypted_api_key)
-gmail_api_key = decrypted_api_key.decode()
-
-## CHATGPT API
-with open("creds/encryption_openai_key.txt", "rb") as f:
-    encryption_key = f.read()
-cipher_suite = Fernet(encryption_key)
-with open("creds/encrypted_openai_api_key.txt", "rb") as f:
-    encrypted_api_key = f.read()
-decrypted_api_key = cipher_suite.decrypt(encrypted_api_key)
-openai_api_key = decrypted_api_key.decode()
-
+api_keys = load_all_api_keys()
+openweather_api_key = api_keys["openweather_api_key"]
+gmail_api_key = api_keys["gmail_api_key"]
+openai_api_key = api_keys["openai_api_key"]
+accuweather_api_key = api_keys["accuweather_api_key"]
 
 file_key = 'data/trail_locations.csv'
 obj = s3_client.get_object(Bucket=bucket_name, Key=file_key)
 print("Reading in file from S3 bucket")
 df_trail_locations = pd.read_csv(obj['Body'])
-print(df_trail_locations.head(5))
+print(df_trail_locations.head(15))
 
 exclude = "minutely,hourly,alerts"
 pickle_file = 'weather_data.pickle'
 
-#######
-pickle_file = 'hourly_weather_data.pickle'
+##### ACCUWEATHER
 
-print("Fetching new hourly data for:", datetime.now().date())
+# Function to get the location key using latitude and longitude
+def get_location_key(api_key, latitude, longitude):
+    location_url = f"http://dataservice.accuweather.com/locations/v1/cities/geoposition/search"
+    params = {
+        'apikey': api_key,
+        'q': f"{latitude},{longitude}"
+    }
+    response = requests.get(location_url, params=params)
+    response.raise_for_status()  # Check for errors
+    location_data = response.json()
+    return location_data['Key']
 
-# Check if the pickle file has been modified in the past hour
-if os.path.exists(pickle_file):
-    file_mod_time = datetime.fromtimestamp(os.path.getmtime(pickle_file))
-    if datetime.now() - file_mod_time < timedelta(minutes=50):
-        print("Pickle file has been modified in the past hour. Loading existing data.")
-        with open(pickle_file, 'rb') as f:
-            hourly_weather = pickle.load(f)
+
+def accuweather_data(df_trail_locations, api_key):
+    pickle_file = 'accuweather_data.pickle'
+    csv_file_key = 'data/accuweather_data.csv'
+
+    print("Fetching new hourly data for:", datetime.now().date())
+
+    # Check if the pickle file has been modified in the past hour
+    if os.path.exists(pickle_file):
+        file_mod_time = datetime.fromtimestamp(os.path.getmtime(pickle_file))
+        if datetime.now() - file_mod_time < timedelta(minutes=50):
+            print("Pickle file has been modified in the past hour. Loading existing data.")
+            with open(pickle_file, 'rb') as f:
+                hourly_weather = pickle.load(f)
+            return hourly_weather
+        else:
+            print("Pickle file is older than 50 minutes. Fetching new data.")
+            hourly_weather = pd.DataFrame()
     else:
-        print("Pickle file is older than X hours. Fetching new data.")
         hourly_weather = pd.DataFrame()
-else:
-    hourly_weather = pd.DataFrame()
 
-# TEMPORARY 05-25 solution
-# hourly_weather = pd.read_csv("temp_hour_df_05_25.csv")    
+    # Loop through each trail location
+    all_data = []
+    for index, row in df_trail_locations.iterrows():
+        lat = row['Latitude']
+        lon = row['Longitude']
+        trail = row['Trail']
+        location_key = row['Accuweather Location Key']
+        print(trail, ": Location Key: ", location_key)
+        time.sleep(1)
+        
+        # Fetch hourly data
+        hourly_url = f"http://dataservice.accuweather.com/currentconditions/v1/{location_key}/historical"
+        params = {'apikey': api_key}
+        response = requests.get(hourly_url, params=params)
+        # print(response)
+        response.raise_for_status()
+        new_data = response.json()
 
-# Define the time range for the past two days
-start_date = datetime.now() - timedelta(days=2)
-end_date = datetime.now()
+        # Process the data into a DataFrame
+        run_datetime = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        for hour_data in new_data:
+            observation_time = datetime.fromisoformat(hour_data['LocalObservationDateTime'][:-6])
+            formatted_time = observation_time.strftime('%Y-%m-%d %H:00')
+            data = {
+                'HOUR': formatted_time,
+                'Trail': trail,
+                'MAX TEMPERATURE': hour_data['Temperature']['Imperial']['Value'],
+                'TOTAL PRECIPITATION': hour_data.get('PrecipitationSummary', {}).get('Precipitation', {}).get('Imperial', {}).get('Value', 0),
+                'run_datetime': run_datetime
+            }
+            all_data.append(data)
+            print(data)
 
-# Loop through each trail location
-for index, row in df_trail_locations.iterrows():
-    lat = row['Latitude']
-    lon = row['Longitude']
-    trail = row['Trail']
-    url = f"https://api.openweathermap.org/data/3.0/onecall?lat={lat}&lon={lon}&exclude=minutely,daily,alerts&appid={api_key}&units=imperial"
-    response = requests.get(url).json()
-    hourly_forecast = response['hourly']
+    new_hourly_weather = pd.DataFrame(all_data)
 
-    # Extract hourly precipitation data
-    new_data = []
-    for hour in hourly_forecast:
-        hour_time = datetime.fromtimestamp(hour['dt'])
-        if start_date <= hour_time <= end_date:
-            precip_inches = 0
-            if 'rain' in hour and '1h' in hour['rain']:
-                precip_inches += (hour['rain']['1h'] / 25.4)
-            if 'snow' in hour and '1h' in hour['snow']:
-                precip_inches += (hour['snow']['1h'] / 25.4)
-            print("hour + PRCP", hour, precip_inches, trail)
-            humidity = hour['humidity']
-            temp = hour['temp']
-            dew_point = calculate_dew_point(temp, humidity)
-            # Append data to the new_data list
-            new_data.append([trail, hour_time.strftime('%Y-%m-%d %H:%M'), precip_inches, temp, dew_point]) #snow_flag
+    # Load existing CSV data from S3 if it exists
+    try:
+        obj = s3_client.get_object(Bucket=bucket_name, Key=csv_file_key)
+        existing_hourly_weather = pd.read_csv(obj['Body'])
+        hourly_weather = pd.concat([existing_hourly_weather, new_hourly_weather])
+        print("added to Accuweather S3 CSV")
+    except s3_client.exceptions.NoSuchKey:
+        hourly_weather = new_hourly_weather
+        print("NO SUCH KEY")
 
-    new_hourly_data = pd.DataFrame(new_data, columns=['Trail', 'HOUR', 'TOTAL PRECIPITATION', 'MAX TEMPERATURE', 'DEW_POINT'])  
-    hourly_weather = pd.concat([new_hourly_data, hourly_weather]).drop_duplicates(['Trail','HOUR']).reset_index(drop=True)
+    # Remove duplicates, keeping the most recent 'run_datetime'
+    hourly_weather = hourly_weather.sort_values(by='run_datetime').drop_duplicates(subset=['HOUR', 'Trail'], keep='last')
 
-# Save to pickle file
-with open(pickle_file, 'wb') as f:
-    pickle.dump(hourly_weather, f)
-print("Hourly data updated and saved to pickle file.")
+    # Filter data to the most recent 10 days
+    ten_days_ago = datetime.now() - timedelta(days=10)
+    hourly_weather['HOUR'] = pd.to_datetime(hourly_weather['HOUR'])
+    hourly_weather = hourly_weather[hourly_weather['HOUR'] >= ten_days_ago]
+
+    # Save the updated data back to S3
+    hourly_weather.to_csv(csv_file_key, index=False)
+    s3_client.upload_file(csv_file_key, bucket_name, csv_file_key)
+
+    # Save to pickle file
+    with open(pickle_file, 'wb') as f:
+        pickle.dump(hourly_weather, f)
+    print("Hourly data updated and saved to pickle file and S3.")
+
+    return hourly_weather
+
+hourly_accuweather = accuweather_data(df_trail_locations, accuweather_api_key)
+
+#######
+
+hourly_weather = update_hourly_weather_data(df_trail_locations, openweather_api_key)
+
+print("###########################")
+print("Accuweather")
+print(hourly_accuweather.head(5))
+print("LEN ACCUWEATHER", len(hourly_accuweather))
+
+print("###########################")
+print("Open Weather")
+print(hourly_weather.head(5))
 
 # Filter for the past two days
 hourly_weather['HOUR'] = pd.to_datetime(hourly_weather['HOUR'])
 hourly_weather['DATE'] = hourly_weather['HOUR'].dt.strftime('%Y-%m-%d')
 hourly_weather['HOUR'] = hourly_weather['HOUR'].dt.strftime('%H')
+# Define the time range for the past two days
+start_date = datetime.now() - timedelta(days=2)
+end_date = datetime.now()
 hourly_weather = hourly_weather[(pd.to_datetime(hourly_weather['DATE']) >= start_date) & (pd.to_datetime(hourly_weather['DATE']) <= end_date)]
 
 print(hourly_weather.sort_values(["DATE","HOUR"], ascending = [False, False]).head(20))
@@ -197,42 +209,8 @@ print(hourly_weather.sort_values(["DATE","HOUR"], ascending = [False, False]).he
 
 pickle_file = 'historical_one_week_all_trails.pickle'
 
-if os.path.exists(pickle_file) and datetime.fromtimestamp(os.path.getmtime(pickle_file)).date() == datetime.now().date():
-    with open(pickle_file, 'rb') as f:
-        historical_one_week_all_trails = pickle.load(f)
-    print("Already have today's historical data. Loading from pickle file.")
-else:
-    # Initialize an empty DataFrame
-    historical_one_week_all_trails = pd.DataFrame()
 
-    # Loop through each trail in df_trail_locations
-    for index, row in df_trail_locations.iterrows():
-        lat = row['Latitude']
-        lon = row['Longitude']
-        trail = row['Trail']
-        data = []
-        # Loop through last X days
-        for i in range(1, 10): 
-            date_var = (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d')
-            response = get_weather_data(lat, lon, date_var, api_key)
-            try:
-                temp_max = response['temperature']['max']
-                precipitation = response['precipitation']['total'] * 0.0393701
-                print("date + PRCP", date_var, precipitation, trail)
-                dew_point = calculate_dew_point(response['temperature']['afternoon'], response['humidity']['afternoon'])
-                data.append([trail, date_var, temp_max, precipitation, dew_point]) #snow_flag
-            except KeyError as e:
-                # Fetch a default error message from the response, if available, otherwise use a specific KeyError message
-                error_msg = response.get('message', f'KeyError for {e}')
-                print(f"Error for {trail} on {date_var}: {error_msg}")
-
-        historical_data = pd.DataFrame(data, columns=['Trail', 'DATE', 'MAX TEMPERATURE', 'TOTAL PRECIPITATION', 'DEW_POINT']) #'SNOW_FLAG'])
-        historical_one_week_all_trails = pd.concat([historical_one_week_all_trails, historical_data])
-
-    # Save to pickle
-    with open(pickle_file, 'wb') as f:
-        pickle.dump(historical_one_week_all_trails, f)
-    print("Did not have today's historical data, pulling API data and saving to pickle file.")
+historical_one_week_all_trails = fetch_historical_weather_data(pickle_file, df_trail_locations, openweather_api_key)
 
 historical_one_week_all_trails.to_csv("historical_one_week_all_trails.csv")
 hourly_weather.to_csv("hourly_weather.csv")
@@ -286,86 +264,6 @@ print("Updated Daily Data:\n", weather_data_daily.sort_values(["trail", "DATE"],
 
 print("TEST - JB - 2024-06-02")
 
-
-def calculate_rolling_metrics_daily(daily_df, lookback_days_list):
-    """
-    Calculates rolling sums and averages for specified columns over a range of lookback days for daily data.
-
-    Parameters:
-    - daily_df: DataFrame containing the daily data.
-    - lookback_days_list: List of integers representing the lookback days for rolling calculations.
-
-    Returns:
-    - daily_df: DataFrame with added columns for rolling calculations.
-    """
-    daily_df['DATE'] = pd.to_datetime(daily_df['DATE'])
-    daily_df = daily_df.sort_values(['trail', 'DATE']) # this is crucial to the logic below
-
-    # Add rolling metrics for past X days
-    for i in lookback_days_list:
-        for col in ['PRCP', 'TMAX', 'DEW_POINT']:  # Columns to calculate rolling metrics for
-            if col in daily_df.columns:  # Check if column exists in DataFrame
-                new_col_name = f'{col}_{i}d'
-                if col == 'PRCP':  
-                    daily_df[new_col_name] = daily_df[col].rolling(window=i, min_periods=1).sum()
-                elif col == 'DEW_POINT':  
-                    daily_df[new_col_name] = daily_df[col].rolling(window=i, min_periods=1).mean()
-                else:  #
-                    daily_df[new_col_name] = daily_df[col].rolling(window=i, min_periods=1).max()
-
-    daily_df.fillna(0, inplace=True)
-    return daily_df
-
-def calculate_rolling_metrics_hourly(hourly_df, lookback_hours_list):
-    """
-    Calculates rolling sums and averages for specified columns over a range of lookback hours for hourly data.
-
-    Parameters:
-    - hourly_df: DataFrame containing the hourly data.
-    - lookback_hours_list: List of integers representing the lookback hours for rolling calculations.
-
-    Returns:
-    - hourly_df: DataFrame with added columns for rolling calculations.
-    """
-   # Ensure the 'DATE' and 'HOUR' columns are in datetime format and sort the DataFrame by 'DATE' and 'HOUR'
-    hourly_df['DATE'] = pd.to_datetime(hourly_df['DATE'])
-    hourly_df['HOUR'] = hourly_df['HOUR'].astype(int)  # Convert HOUR to integer
-    hourly_df['DATETIME'] = hourly_df.apply(lambda row: pd.Timestamp(row['DATE']) + pd.to_timedelta(row['HOUR'], unit='h'), axis=1)
-    hourly_df = hourly_df.sort_values(['trail', 'DATETIME']) # this is crucial to the logic below
-
-    for i in lookback_hours_list:
-        for col in ['PRCP', 'TMAX', 'DEW_POINT']: 
-            if col in hourly_df.columns:  
-                new_col_name = f'{col}_{i}h'
-                if col == 'PRCP': 
-                    hourly_df[new_col_name] = hourly_df[col].rolling(window=i, min_periods=1).sum()
-                elif col == 'DEW_POINT': 
-                    hourly_df[new_col_name] = hourly_df[col].rolling(window=i, min_periods=1).mean()
-                else:  
-                    hourly_df[new_col_name] = hourly_df[col].rolling(window=i, min_periods=1).max()
-
-    hourly_df.fillna(0, inplace=True)
-    return hourly_df
-
-def combine_hourly_and_daily(hourly_df, daily_df):
-    """
-    Combines hourly and daily data into a cumulative DataFrame.
-
-    Parameters:
-    - hourly_df: DataFrame containing the hourly data with rolling metrics.
-    - daily_df: DataFrame containing the daily data with rolling metrics.
-
-    Returns:
-    - combined_df: Cumulative DataFrame.
-    """
-    # Drop 'DATETIME' column from hourly_df to avoid confusion
-    hourly_df.drop(columns=['DATETIME'], inplace=True)
-
-    # Concatenate the hourly and daily data
-    combined_df = pd.concat([daily_df, hourly_df], ignore_index=True)
-
-    return combined_df
-
 # Example usage:
 lookback_days_list = [1, 2, 3, 5, 7, 10]
 lookback_hours_list = [4, 8, 16]
@@ -405,6 +303,12 @@ url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sh
 df_gsheet_trail_adjustments = pd.read_csv(url)
 trail_adjustments = dict(zip(df_gsheet_trail_adjustments['Trail'], df_gsheet_trail_adjustments['PRCP_ADJ_VALUE']))
 
+sheet_id = '1IrZgmVjHmFkdxxM_65XzKW_nt8p8LCIHgkqtbjY4QJE'
+sheet_name = 'if_statements'
+url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={sheet_name}'
+df_gsheet_if_statements = pd.read_csv(url)
+print(df_gsheet_if_statements.head(10))
+
 def adjust_prcp(prcp, tmax, dew_point, trail):
     # Adjust based on TMAX
     if tmax > 90:
@@ -440,12 +344,6 @@ def adjust_prcp(prcp, tmax, dew_point, trail):
 
     return prcp
 
-
-sheet_id = '1IrZgmVjHmFkdxxM_65XzKW_nt8p8LCIHgkqtbjY4QJE'
-sheet_name = 'if_statements'
-url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={sheet_name}'
-df_gsheet_if_statements = pd.read_csv(url)
-print(df_gsheet_if_statements.head(10))
 
 def trail_status(row):
     prcp_4h = row['PRCP_4h']
@@ -605,6 +503,10 @@ s3_client = boto3.client('s3')
 bucket_name = 'mtb-trail-condition-predictions'
 log_file_key = 'trail_conditions_log.csv'
 
+# Your existing script processing
+final_df['trail_status'] = final_df.apply(trail_status, axis=1)
+print(final_df[['trail', 'PRCP_1d', 'PRCP_8h', 'PRCP_2d', 'PRCP_16h', 'PRCP_3d', 'PRCP_5d', 'PRCP_7d', 'TMAX_1d', 'DEW_POINT_1d', 'trail_status']])
+
 def get_current_timestamp():
     return datetime.now().strftime('%Y-%m-%d %H:00:00')
 
@@ -635,10 +537,6 @@ def append_to_log(final_df):
         print("Log for the current timestamp already exists.")
 
     return log_df
-
-# Your existing script processing
-final_df['trail_status'] = final_df.apply(trail_status, axis=1)
-print(final_df[['trail', 'PRCP_1d', 'PRCP_8h', 'PRCP_2d', 'PRCP_16h', 'PRCP_3d', 'PRCP_5d', 'PRCP_7d', 'TMAX_1d', 'DEW_POINT_1d', 'trail_status']])
 
 # Append the final_df to log
 log_df = append_to_log(final_df[['trail', 'PRCP_1d', 'PRCP_8h', 'PRCP_2d', 'PRCP_16h', 'PRCP_3d', 'PRCP_5d', 'PRCP_7d', 'TMAX_1d', 'DEW_POINT_1d', 'trail_status']])
