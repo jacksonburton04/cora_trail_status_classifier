@@ -37,7 +37,7 @@ with open(config_file_path, 'r') as config_file:
 data_directory = config['paths']['data_directory']
 os.chdir(data_directory)
 
-lookback_days_list = [2, 3, 4, 5, 6, 7, 11, 18]
+# lookback_days_list = [2, 3, 4, 5, 6, 7, 11, 18]
 
 s3_client = boto3.client('s3')
 s3 = boto3.client('s3')
@@ -433,7 +433,7 @@ def trail_status(row):
         # Doing this to make the algorithim more conservative and less prone towards creating DEFINITE Classifications
         # In other words, make the algorithim have to "fight" a bit more to make definite conclusions.
         # This will artificially bring down the weighted average scores, and make LIKELY WET/OPEN Classifications more common
-        df_status_counts.loc[df_status_counts['status'] == 'LIKELY WET/OPEN', 'count'] += 1.5
+        df_status_counts.loc[df_status_counts['status'] == 'LIKELY WET/OPEN', 'count'] += 1.0
         
         print("#################")
         # print("DF STATUS COUNTS", df_status_counts.head(5))
@@ -502,7 +502,7 @@ def load_existing_log():
         log_df = pd.read_csv(io.BytesIO(obj['Body'].read()))
         return log_df
     except s3_client.exceptions.NoSuchKey:
-        return pd.DataFrame(columns=['trail', 'PRCP_24h', 'PRCP_8h', 'PRCP_48h', 'PRCP_16h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'TMAX_24h', 'DEW_POINT_24h', 'trail_status', 'timestamp'])
+        return pd.DataFrame(columns=['trail', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'trail_status', 'timestamp'])
 
 def save_log_to_s3(log_df):
     csv_buffer = io.StringIO()
@@ -525,20 +525,21 @@ def append_to_log(final_df):
     return log_df
 
 # Append the final_df to log
-log_df = append_to_log(final_df[['trail', 'PRCP_24h', 'PRCP_8h', 'PRCP_48h', 'PRCP_16h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'TMAX_24h', 'DEW_POINT_24h', 'trail_status']])
+log_df = append_to_log(final_df[['trail', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'trail_status']]) #timestamp is created, not inputted
 
+print("LOG DF", log_df.head())
 #### VIEW LOG
 
 #### VIEW LOG
 print("VIEW LOG ######")
 # Get current timestamp and past 24 hours timestamp
-current_timestamp = datetime.now().replace(minute=0, second=0, microsecond=0)
+current_timestamp = datetime.now().replace(minute=59, second=0, microsecond=0)
 past_24_hours = current_timestamp - timedelta(hours=24)
 
 # Filter log_df based on timestamp in past 24 hours and sort it
 # the script runs once per hour, so duplicates should only exist when in DEV mode locally running it more than 1X per hour
 # will drop duplicates at random to deal with this
-log_df_for_email = log_df[log_df['timestamp'] >= past_24_hours.strftime('%Y-%m-%d %H:%M:%S')].sort_values(['trail', 'timestamp'], ascending=[True, False])[['trail', 'timestamp', 'trail_status']].drop_duplicates(subset=['trail', 'timestamp'])
+log_df_for_email = log_df[log_df['timestamp'] >= past_24_hours.strftime('%Y-%m-%d %H:%M:%S')].sort_values(['trail', 'timestamp'], ascending=[True, True])[['trail', 'timestamp', 'trail_status', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h']].drop_duplicates(subset=['trail', 'timestamp'])
 log_df_visual = log_df_for_email.copy()
 
 def reformat_timestamp_to_relative(timestamp, current_timestamp):
@@ -665,18 +666,18 @@ df_filtered = df_filtered.sort_values(by='trail')
 
 
 # Set the flag for running OpenAI API
-run_openai_api = False  # Change this to False if you want to skip the OpenAI API call
+run_openai_api = True  # Change this to False if you want to skip the OpenAI API call
 
 if run_openai_api:
     openai.api_key = openai_api_key
 
     # Call the OpenAI API to generate summary
-    df_summary_input = ("""Please point out trail status: {}""".format(log_df_for_email.to_string(index=False)))
+    df_summary_input = ("""Please point out trail status changes and use the PRCP values to explain why you think the Trail status may have changed. Focus on the most recent changes (timestamp DESC) for each trail value: {}""".format(log_df_for_email.to_string(index=False)))
 
     response = openai.ChatCompletion.create(
         model="gpt-4o",  
-        temperature=0.4,
-        max_tokens=1000,
+        temperature=0.3,
+        max_tokens=2000,
         messages=[
             {"role": "system", "content": "You send out daily automated emails to all the local Cincinnati Mountain Bikers. You use a semi-casual semi-formal tone."},
             {"role": "user", "content": df_summary_input}
@@ -707,18 +708,31 @@ def format_trail_status(status):
     else:
         return f"<span style='color: black;'>{status}</span>"
 
-# Create the HTML content for changes
+# # Create the HTML content for changes
+# def get_trail_changes(df, trail):
+#     changes = []
+#     for i in range(len(df) - 1):
+#         current_status = format_trail_status(status_reverse_mapping.get(df.iloc[i]['trail_status'], 'Unknown'))
+#         next_status = format_trail_status(status_reverse_mapping.get(df.iloc[i + 1]['trail_status'], 'Unknown'))
+#         timestamp = df.iloc[i + 1]['timestamp']
+#         changes.append(f"{current_status} → {next_status} ({timestamp})")
+#     return "<br>".join(changes)
+
 def get_trail_changes(df, trail):
     changes = []
+    df = df.sort_values(by='timestamp', ascending=False)  # Ensure the DataFrame is sorted by timestamp in descending order
     for i in range(len(df) - 1):
         current_status = format_trail_status(status_reverse_mapping.get(df.iloc[i]['trail_status'], 'Unknown'))
-        next_status = format_trail_status(status_reverse_mapping.get(df.iloc[i + 1]['trail_status'], 'Unknown'))
-        timestamp = df.iloc[i + 1]['timestamp']
-        changes.append(f"{current_status} → {next_status} ({timestamp})")
-    return "<br>".join(changes)
+        previous_status = format_trail_status(status_reverse_mapping.get(df.iloc[i + 1]['trail_status'], 'Unknown'))
+        timestamp = df.iloc[i]['timestamp']
+        changes.append(f"{previous_status} → {current_status} ({timestamp})")
+    return "<br>".join(changes)  # Keep the order of changes as descending
 
 # trail_changes = log_df_for_email.groupby('trail').apply(lambda df: get_trail_changes(df, df['trail'].iloc[0])).to_dict()
-trail_changes = dict(sorted(log_df_for_email.groupby('trail').apply(lambda df: get_trail_changes(df, df['trail'].iloc[0])).to_dict().items()))
+log_df_for_email = log_df_for_email.sort_values(['trail', 'timestamp'], ascending=[True, False])
+# trail_changes = dict(sorted(log_df_for_email.groupby('trail').apply(lambda df: get_trail_changes(df, df['trail'].iloc[0])).to_dict().items()))
+trail_changes = log_df_for_email.groupby('trail').apply(lambda df: get_trail_changes(df, df['trail'].iloc[0])).to_dict()
+trail_changes = dict(sorted(trail_changes.items()))
 
 bullet_points = df_filtered.apply(lambda row: f"<li><strong>{row['trail']}:</strong> {format_trail_status(row['trail_status'])}</li>", axis=1).tolist()
 bullet_points_html = "<ul>" + "".join(bullet_points) + "</ul>"
@@ -730,16 +744,17 @@ email_body = f"""
 <h3>Trail Status Data:</h3>
 {bullet_points_html}
 <hr>
+</h2>OpenAI Analysis:</h2>
+{df_summary}
 </h2>Last Two Days - See Changes Over Time:</h2>
 """
 
-for trail, changes in trail_changes.items():
-    current_status = format_trail_status(status_reverse_mapping[log_df_for_email[log_df_for_email['trail'] == trail].iloc[0]['trail_status']])
-    email_body += f"<h2>{trail_reverse_mapping[trail]}:</h2>"
-    email_body += f"<h3>Current Status: {current_status}</h3>"
-    email_body += f"<p>Changes:<br>{changes}</p>"
+# for trail, changes in trail_changes.items():
+#     current_status = format_trail_status(status_reverse_mapping[log_df_for_email[log_df_for_email['trail'] == trail].iloc[0]['trail_status']])
+#     email_body += f"<h2>{trail_reverse_mapping[trail]}:</h2>"
+#     email_body += f"<h3>Current Status: {current_status}</h3>"
+#     email_body += f"<p>Changes:<br>{changes}</p>"
 
-email_body += "<hr><p>Happy biking!</p>"
 email_body += "<img src='cid:trail_status_plot' alt='Trail Status Plot'>"
 
 # Creating the email message
