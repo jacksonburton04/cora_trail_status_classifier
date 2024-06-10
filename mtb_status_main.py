@@ -647,135 +647,142 @@ plt.close()
 # EMAIL
 #######
 
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.image import MIMEImage
+# Check if the current hour is 8, 12, or 16 (4 PM)
+current_hour = datetime.now().hour
+if current_hour in [8,16]:
 
-# Load email config
-with open('creds/config_emails.json', 'r') as file:
-    config = json.load(file)
-    email_addresses = config['email_addresses']
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    from email.mime.image import MIMEImage
 
-from_email = email_addresses[0]
+    # Load email config
+    with open('creds/config_emails.json', 'r') as file:
+        config = json.load(file)
+        email_addresses = config['email_addresses']
 
-# Assuming final_df is your DataFrame
-# Filter DataFrame to include only 'trail' and 'trail_status' columns for the email
-df_filtered = final_df[['trail', 'trail_status']]
-df_filtered = df_filtered.sort_values(by='trail')
+    from_email = email_addresses[0]
+
+    # Assuming final_df is your DataFrame
+    # Filter DataFrame to include only 'trail' and 'trail_status' columns for the email
+    df_filtered = final_df[['trail', 'trail_status']]
+    df_filtered = df_filtered.sort_values(by='trail')
 
 
-# Set the flag for running OpenAI API
-run_openai_api = True  # Change this to False if you want to skip the OpenAI API call
+    # Set the flag for running OpenAI API
+    run_openai_api = True  # Change this to False if you want to skip the OpenAI API call
 
-if run_openai_api:
-    openai.api_key = openai_api_key
+    if run_openai_api:
+        openai.api_key = openai_api_key
 
-    # Call the OpenAI API to generate summary
-    df_summary_input = ("""Please point out trail status changes and use the PRCP values to explain why you think the Trail status may have changed. Focus on the most recent changes (timestamp DESC) for each trail value: {}""".format(log_df_for_email.to_string(index=False)))
+        # Call the OpenAI API to generate summary
+        df_summary_input = ("""Please point out trail status changes and use the PRCP values to explain why you think the Trail status may have changed. Focus on the most recent changes (timestamp DESC) for each trail value: {}""".format(log_df_for_email.to_string(index=False)))
 
-    response = openai.ChatCompletion.create(
-        model="gpt-4o",  
-        temperature=0.3,
-        max_tokens=2000,
-        messages=[
-            {"role": "system", "content": "You send out daily automated emails to all the local Cincinnati Mountain Bikers. You use a semi-casual semi-formal tone."},
-            {"role": "user", "content": df_summary_input}
-        ]
-    )
+        response = openai.ChatCompletion.create(
+            model="gpt-4o",  
+            temperature=0.3,
+            max_tokens=2000,
+            messages=[
+                {"role": "system", "content": "You send out daily automated emails to all the local Cincinnati Mountain Bikers. You use a semi-casual semi-formal tone."},
+                {"role": "user", "content": df_summary_input}
+            ]
+        )
 
-    # Convert short codes back to full text in the response
-    df_summary = response.choices[0].message.content
-    for short_code, full_text in status_reverse_mapping.items():
-        df_summary = df_summary.replace(short_code, full_text)
-    for short_code, full_text in trail_reverse_mapping.items():
-        df_summary = df_summary.replace(short_code, full_text)
-    df_summary = df_summary.replace('\n', '<br>')
-else:
-    df_summary = "OpenAI API was not called. Here is the trail status data without the summary."
-
-def format_trail_status(status):
-    if status == "DEFINITE CLOSE":
-        return f"<span style='color: darkred; font-weight: bold;'>{status}</span>"
-    if status == "LIKELY CLOSE":
-        return f"<span style='color: lightcoral; font-weight: bold;'>{status}</span>"
-    elif status == "LIKELY WET/OPEN":
-        return f"<span style='color: goldenrod; font-weight: bold;'>{status}</span>"
-    elif status == "LIKELY OPEN":
-        return f"<span style='color: lightgreen; font-weight: bold;'>{status}</span>"
-    elif status == "DEFINITE OPEN":
-        return f"<span style='color: darkgreen; font-weight: bold;'>{status}</span>"
+        # Convert short codes back to full text in the response
+        df_summary = response.choices[0].message.content
+        for short_code, full_text in status_reverse_mapping.items():
+            df_summary = df_summary.replace(short_code, full_text)
+        for short_code, full_text in trail_reverse_mapping.items():
+            df_summary = df_summary.replace(short_code, full_text)
+        df_summary = df_summary.replace('\n', '<br>')
     else:
-        return f"<span style='color: black;'>{status}</span>"
+        df_summary = "OpenAI API was not called. Here is the trail status data without the summary."
 
-# # Create the HTML content for changes
-# def get_trail_changes(df, trail):
-#     changes = []
-#     for i in range(len(df) - 1):
-#         current_status = format_trail_status(status_reverse_mapping.get(df.iloc[i]['trail_status'], 'Unknown'))
-#         next_status = format_trail_status(status_reverse_mapping.get(df.iloc[i + 1]['trail_status'], 'Unknown'))
-#         timestamp = df.iloc[i + 1]['timestamp']
-#         changes.append(f"{current_status} → {next_status} ({timestamp})")
-#     return "<br>".join(changes)
+    def format_trail_status(status):
+        if status == "DEFINITE CLOSE":
+            return f"<span style='color: darkred; font-weight: bold;'>{status}</span>"
+        if status == "LIKELY CLOSE":
+            return f"<span style='color: lightcoral; font-weight: bold;'>{status}</span>"
+        elif status == "LIKELY WET/OPEN":
+            return f"<span style='color: goldenrod; font-weight: bold;'>{status}</span>"
+        elif status == "LIKELY OPEN":
+            return f"<span style='color: lightgreen; font-weight: bold;'>{status}</span>"
+        elif status == "DEFINITE OPEN":
+            return f"<span style='color: darkgreen; font-weight: bold;'>{status}</span>"
+        else:
+            return f"<span style='color: black;'>{status}</span>"
 
-def get_trail_changes(df, trail):
-    changes = []
-    df = df.sort_values(by='timestamp', ascending=False)  # Ensure the DataFrame is sorted by timestamp in descending order
-    for i in range(len(df) - 1):
-        current_status = format_trail_status(status_reverse_mapping.get(df.iloc[i]['trail_status'], 'Unknown'))
-        previous_status = format_trail_status(status_reverse_mapping.get(df.iloc[i + 1]['trail_status'], 'Unknown'))
-        timestamp = df.iloc[i]['timestamp']
-        changes.append(f"{previous_status} → {current_status} ({timestamp})")
-    return "<br>".join(changes)  # Keep the order of changes as descending
+    # # Create the HTML content for changes
+    # def get_trail_changes(df, trail):
+    #     changes = []
+    #     for i in range(len(df) - 1):
+    #         current_status = format_trail_status(status_reverse_mapping.get(df.iloc[i]['trail_status'], 'Unknown'))
+    #         next_status = format_trail_status(status_reverse_mapping.get(df.iloc[i + 1]['trail_status'], 'Unknown'))
+    #         timestamp = df.iloc[i + 1]['timestamp']
+    #         changes.append(f"{current_status} → {next_status} ({timestamp})")
+    #     return "<br>".join(changes)
 
-# trail_changes = log_df_for_email.groupby('trail').apply(lambda df: get_trail_changes(df, df['trail'].iloc[0])).to_dict()
-log_df_for_email = log_df_for_email.sort_values(['trail', 'timestamp'], ascending=[True, False])
-# trail_changes = dict(sorted(log_df_for_email.groupby('trail').apply(lambda df: get_trail_changes(df, df['trail'].iloc[0])).to_dict().items()))
-trail_changes = log_df_for_email.groupby('trail').apply(lambda df: get_trail_changes(df, df['trail'].iloc[0])).to_dict()
-trail_changes = dict(sorted(trail_changes.items()))
+    def get_trail_changes(df, trail):
+        changes = []
+        df = df.sort_values(by='timestamp', ascending=False)  # Ensure the DataFrame is sorted by timestamp in descending order
+        for i in range(len(df) - 1):
+            current_status = format_trail_status(status_reverse_mapping.get(df.iloc[i]['trail_status'], 'Unknown'))
+            previous_status = format_trail_status(status_reverse_mapping.get(df.iloc[i + 1]['trail_status'], 'Unknown'))
+            timestamp = df.iloc[i]['timestamp']
+            changes.append(f"{previous_status} → {current_status} ({timestamp})")
+        return "<br>".join(changes)  # Keep the order of changes as descending
 
-bullet_points = df_filtered.apply(lambda row: f"<li><strong>{row['trail']}:</strong> {format_trail_status(row['trail_status'])}</li>", axis=1).tolist()
-bullet_points_html = "<ul>" + "".join(bullet_points) + "</ul>"
+    # trail_changes = log_df_for_email.groupby('trail').apply(lambda df: get_trail_changes(df, df['trail'].iloc[0])).to_dict()
+    log_df_for_email = log_df_for_email.sort_values(['trail', 'timestamp'], ascending=[True, False])
+    # trail_changes = dict(sorted(log_df_for_email.groupby('trail').apply(lambda df: get_trail_changes(df, df['trail'].iloc[0])).to_dict().items()))
+    trail_changes = log_df_for_email.groupby('trail').apply(lambda df: get_trail_changes(df, df['trail'].iloc[0])).to_dict()
+    trail_changes = dict(sorted(trail_changes.items()))
 
-# Prepare the email body with individual headers for each 'CORA Trail'
-today_date = datetime.now().strftime("%Y-%m-%d")
-email_body = f"""
-<h2>{today_date} Weather Report</h2>
-<h3>Trail Status Data:</h3>
-{bullet_points_html}
-<hr>
-</h2>OpenAI Analysis:</h2>
-{df_summary}
-</h2>Last Two Days - See Changes Over Time:</h2>
-"""
+    bullet_points = df_filtered.apply(lambda row: f"<li><strong>{row['trail']}:</strong> {format_trail_status(row['trail_status'])}</li>", axis=1).tolist()
+    bullet_points_html = "<ul>" + "".join(bullet_points) + "</ul>"
 
-# for trail, changes in trail_changes.items():
-#     current_status = format_trail_status(status_reverse_mapping[log_df_for_email[log_df_for_email['trail'] == trail].iloc[0]['trail_status']])
-#     email_body += f"<h2>{trail_reverse_mapping[trail]}:</h2>"
-#     email_body += f"<h3>Current Status: {current_status}</h3>"
-#     email_body += f"<p>Changes:<br>{changes}</p>"
+    # Prepare the email body with individual headers for each 'CORA Trail'
+    today_date = datetime.now().strftime("%Y-%m-%d")
+    email_body = f"""
+    <h2>{today_date} Weather Report</h2>
+    <h3>Trail Status Data:</h3>
+    {bullet_points_html}
+    <hr>
+    </h2>OpenAI Analysis:</h2>
+    {df_summary}
+    </h2>Last Two Days - See Changes Over Time:</h2>
+    """
 
-email_body += "<img src='cid:trail_status_plot' alt='Trail Status Plot'>"
+    # for trail, changes in trail_changes.items():
+    #     current_status = format_trail_status(status_reverse_mapping[log_df_for_email[log_df_for_email['trail'] == trail].iloc[0]['trail_status']])
+    #     email_body += f"<h2>{trail_reverse_mapping[trail]}:</h2>"
+    #     email_body += f"<h3>Current Status: {current_status}</h3>"
+    #     email_body += f"<p>Changes:<br>{changes}</p>"
 
-# Creating the email message
-msg = MIMEMultipart('alternative')
-msg['From'] = from_email
-msg['To'] = ", ".join(email_addresses)
-msg['Subject'] = f'{today_date} CORA Trail Status Update'
+    email_body += "<img src='cid:trail_status_plot' alt='Trail Status Plot'>"
 
-# Attach HTML content
-part = MIMEText(email_body, 'html')
-msg.attach(part)
+    # Creating the email message
+    msg = MIMEMultipart('alternative')
+    msg['From'] = from_email
+    msg['To'] = ", ".join(email_addresses)
+    msg['Subject'] = f'{today_date} CORA Trail Status Update'
 
-# Attach the image
-with open('trail_status_plot.png', 'rb') as img:
-    img_data = img.read()
-img_part = MIMEImage(img_data, name='trail_status_plot.png')
-img_part.add_header('Content-ID', '<trail_status_plot>')
-msg.attach(img_part)
+    # Attach HTML content
+    part = MIMEText(email_body, 'html')
+    msg.attach(part)
 
-with smtplib.SMTP('smtp.gmail.com', 587) as server:  # Use the correct SMTP server and port
-    server.starttls()
-    server.login(from_email, gmail_api_key)   
-    server.sendmail(from_email, email_addresses, msg.as_string())
-print("Email sent successfully!")
+    # Attach the image
+    with open('trail_status_plot.png', 'rb') as img:
+        img_data = img.read()
+    img_part = MIMEImage(img_data, name='trail_status_plot.png')
+    img_part.add_header('Content-ID', '<trail_status_plot>')
+    msg.attach(img_part)
+
+    with smtplib.SMTP('smtp.gmail.com', 587) as server:  # Use the correct SMTP server and port
+        server.starttls()
+        server.login(from_email, gmail_api_key)   
+        server.sendmail(from_email, email_addresses, msg.as_string())
+    print("Email sent successfully!")
+
+else:
+    print("Current hour is not 8AM or 4PM, email not sent")
