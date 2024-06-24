@@ -408,11 +408,11 @@ def trail_status(row):
                 if greater_than['prcp_4h'][status] <= prcp_values['prcp_4h'] <= less_than['prcp_4h'][status]:
                     count += 0.25
                 if greater_than['prcp_8h'][status] <= prcp_values['prcp_8h'] <= less_than['prcp_8h'][status]:
-                    count += 0.5
+                    count += 0.75
                 if greater_than['prcp_16h'][status] <= prcp_values['prcp_16h'] <= less_than['prcp_16h'][status]:
                     count += 0.25
                 if greater_than['prcp_24h'][status] <= prcp_values['prcp_24h'] <= less_than['prcp_24h'][status]:
-                    count += 1
+                    count += 0.75
                 if greater_than['prcp_48h'][status] <= prcp_values['prcp_48h'] <= less_than['prcp_48h'][status]:
                     count += 1.5
                 if greater_than['prcp_72h'][status] <= prcp_values['prcp_72h'] <= less_than['prcp_72h'][status]:
@@ -420,7 +420,7 @@ def trail_status(row):
                 if greater_than['prcp_120h'][status] <= prcp_values['prcp_120h'] <= less_than['prcp_120h'][status]:
                     count += 1
                 if greater_than['prcp_168h'][status] <= prcp_values['prcp_168h'] <= less_than['prcp_168h'][status]:
-                    count += 1
+                    count += 3
             except KeyError as e:
                 print(f"KeyError: {e}. prcp_values: {prcp_values}")
 
