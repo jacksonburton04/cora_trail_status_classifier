@@ -28,8 +28,8 @@ from utils import *
 
 warnings.filterwarnings('ignore')
 
-# config_file_path = 'data/dev_config.json'
-config_file_path = '/root/cora_trail_status_classifier/data/prod_config.json'
+config_file_path = 'data/dev_config.json'
+# config_file_path = '/root/cora_trail_status_classifier/data/prod_config.json'
 
 with open(config_file_path, 'r') as config_file:
     config = json.load(config_file)
@@ -330,6 +330,14 @@ def adjust_prcp(prcp, tmax, dew_point, trail):
     return prcp
 
 
+status_scores = {
+    'DEFINITE CLOSE': 5,
+    'LIKELY CLOSE': 4,
+    'LIKELY WET/OPEN': 3,
+    'LIKELY OPEN': 2,
+    'DEFINITE OPEN': 1
+}
+
 def trail_status(row):
     prcp_4h = row['PRCP_4h']
     prcp_8h = row['PRCP_8h']
@@ -367,15 +375,6 @@ def trail_status(row):
     prcp_120h = adjust_prcp(prcp_120h, tmax_120h, dew_point_120h, trail)
     prcp_168h = adjust_prcp(prcp_168h, tmax_168h, dew_point_168h, trail)
 
-    # sheet_id = '1IrZgmVjHmFkdxxM_65XzKW_nt8p8LCIHgkqtbjY4QJE'
-    # sheet_name = 'if_statements'
-    # url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={sheet_name}'
-    # df_gsheet_if_statements = pd.read_csv(url)
-
-    # print("gsheets if statements", df_gsheet_if_statements.head(10))
-
-    # status_levels = ['DEFINITE CLOSE', 'LIKELY CLOSE', 'LIKELY WET/OPEN', 'LIKELY OPEN', 'DEFINITE OPEN']
-
     dimensions = ['prcp_4h', 'prcp_8h', 'prcp_16h', 'prcp_24h', 'prcp_48h', 'prcp_72h', 'prcp_120h', 'prcp_168h']
     status_levels = ['DEFINITE CLOSE', 'LIKELY CLOSE', 'LIKELY WET/OPEN', 'LIKELY OPEN', 'DEFINITE OPEN']
 
@@ -388,17 +387,8 @@ def trail_status(row):
         for status in status_levels:
             greater_than[dim][status] = df_gsheet_if_statements.query(f"`Metric Direction` == 'Greater than' and `PRCP Dimension` == '{dim}'")[status].values[0]
             less_than[dim][status] = df_gsheet_if_statements.query(f"`Metric Direction` == 'Less than' and `PRCP Dimension` == '{dim}'")[status].values[0]
-            # print(status, greater_than[dim][status], less_than[dim][status])
-
-    # print("DIMENSIONS", dimensions)
-    # print("dim", dim)
 
     def get_trail_status(prcp_values):
-
-        # Debugging: Print prcp_values before accessing
-        # print("prcp_values:", prcp_values)
-        # print("prcp_values keys:", prcp_values.keys())
-        
         status_counts = []
 
         for status in status_levels:
@@ -408,11 +398,11 @@ def trail_status(row):
                 if greater_than['prcp_4h'][status] <= prcp_values['prcp_4h'] <= less_than['prcp_4h'][status]:
                     count += 0.25
                 if greater_than['prcp_8h'][status] <= prcp_values['prcp_8h'] <= less_than['prcp_8h'][status]:
-                    count += 0.75
+                    count += 0.5
                 if greater_than['prcp_16h'][status] <= prcp_values['prcp_16h'] <= less_than['prcp_16h'][status]:
                     count += 0.25
                 if greater_than['prcp_24h'][status] <= prcp_values['prcp_24h'] <= less_than['prcp_24h'][status]:
-                    count += 0.75
+                    count += 1
                 if greater_than['prcp_48h'][status] <= prcp_values['prcp_48h'] <= less_than['prcp_48h'][status]:
                     count += 1.5
                 if greater_than['prcp_72h'][status] <= prcp_values['prcp_72h'] <= less_than['prcp_72h'][status]:
@@ -420,7 +410,7 @@ def trail_status(row):
                 if greater_than['prcp_120h'][status] <= prcp_values['prcp_120h'] <= less_than['prcp_120h'][status]:
                     count += 1
                 if greater_than['prcp_168h'][status] <= prcp_values['prcp_168h'] <= less_than['prcp_168h'][status]:
-                    count += 3
+                    count += 1
             except KeyError as e:
                 print(f"KeyError: {e}. prcp_values: {prcp_values}")
 
@@ -435,19 +425,6 @@ def trail_status(row):
         # This will artificially bring down the weighted average scores, and make LIKELY WET/OPEN Classifications more common
         df_status_counts.loc[df_status_counts['status'] == 'LIKELY WET/OPEN', 'count'] += 1.0
         
-        print("#################")
-        # print("DF STATUS COUNTS", df_status_counts.head(5))
-
-        # Status scores as provided
-        status_scores = {
-            'DEFINITE CLOSE': 5,
-            'LIKELY CLOSE': 4,
-            'LIKELY WET/OPEN': 3,
-            'LIKELY OPEN': 2,
-            'DEFINITE OPEN': 1
-        }
-
-        # Calculate the weighted average score
         total_weighted_score = 0
         total_count = 0
 
@@ -458,16 +435,14 @@ def trail_status(row):
             total_count += count
 
         weighted_average_score = total_weighted_score / total_count if total_count != 0 else 0
-        print("WEIGHTED AVG SCORE", weighted_average_score)
 
-        # Find the closest status based on the weighted average score
-        closest_status = min(status_scores, key=lambda k: abs(status_scores[k] - weighted_average_score))
-        # print("CLOSEST STATUS", closest_status)
-        trail_status = closest_status
-        # df_status_counts['trail_status'] = trail_status
+        # Find the closest and second closest status based on the weighted average score
+        sorted_statuses = sorted(status_scores.keys(), key=lambda k: abs(status_scores[k] - weighted_average_score))
+        closest_status = sorted_statuses[0]
+        next_closest_status = sorted_statuses[1]
 
-        return trail_status
-
+        return closest_status, next_closest_status
+    
     prcp_values = {
         'prcp_4h': prcp_4h,
         'prcp_8h': prcp_8h,
@@ -480,11 +455,13 @@ def trail_status(row):
     }
     print("processing this row of data", row[['trail', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h']])
     print("Result: ", get_trail_status(prcp_values))
-    return get_trail_status(prcp_values)
+    
+    closest_status, next_closest_status = get_trail_status(prcp_values)
+    return pd.Series({'trail_status': closest_status, 'next_closest_trail_status': next_closest_status})
 
-# Your existing script processing
-final_df['trail_status'] = final_df.apply(trail_status, axis=1)
-# print(final_df[['trail', 'PRCP_24h', 'PRCP_8h', 'PRCP_48h', 'PRCP_16h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'TMAX_24h', 'DEW_POINT_24h', 'trail_status']])
+# Applying the updated function to the DataFrame
+final_df[['trail_status', 'next_closest_trail_status']] = final_df.apply(trail_status, axis=1)
+print(final_df[['trail', 'PRCP_24h', 'PRCP_8h', 'PRCP_48h', 'PRCP_16h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'TMAX_24h', 'DEW_POINT_24h', 'trail_status', 'next_closest_trail_status']])
 
 
 # Initialize the S3 client
@@ -492,7 +469,7 @@ s3_client = boto3.client('s3')
 bucket_name = 'mtb-trail-condition-predictions'
 log_file_key = 'trail_conditions_log.csv'
 
-#
+
 def get_current_timestamp():
     return datetime.now().strftime('%Y-%m-%d %H:00:00')
 
@@ -502,7 +479,7 @@ def load_existing_log():
         log_df = pd.read_csv(io.BytesIO(obj['Body'].read()))
         return log_df
     except s3_client.exceptions.NoSuchKey:
-        return pd.DataFrame(columns=['trail', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'trail_status', 'timestamp'])
+        return pd.DataFrame(columns=['trail', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'trail_status', 'next_closest_trail_status', 'timestamp'])
 
 def save_log_to_s3(log_df):
     csv_buffer = io.StringIO()
@@ -525,7 +502,10 @@ def append_to_log(final_df):
     return log_df
 
 # Append the final_df to log
-log_df = append_to_log(final_df[['trail', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'trail_status']]) #timestamp is created, not inputted
+log_df = append_to_log(final_df[['trail', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'trail_status', 'next_closest_trail_status',]]) #timestamp is created, not inputted
+
+# To send full timestamp for QA purposes to Nathan at CORA
+log_df['timestamp_with_date'] = log_df['timestamp']
 
 print("LOG DF", log_df.head())
 #### VIEW LOG
@@ -605,7 +585,6 @@ log_df_visual['color'] = log_df_visual['trail_status'].map(color_mapping).fillna
 # Create the plot
 plt.figure(figsize=(12, 12))
 log_df_visual = log_df_visual.sort_values(['timestamp', 'trail'], ascending = [True, False])
-# log_df_visual = log_df_visual.sort_values('trail', ascending = False)
 log_df_visual['timestamp'] = pd.to_datetime(log_df_visual['timestamp'])
 log_df_visual['timestamp'] = log_df_visual['timestamp'].dt.strftime('%I%p')
 scatter = plt.scatter(log_df_visual['timestamp'], log_df_visual['trail'], c=log_df_visual['color'], s=200, marker='s')  # 's' for squares, size 100
@@ -620,12 +599,9 @@ legend_elements = [
     plt.Line2D([0], [0], marker='s', color='w', label='Error (Uncommon)', markersize=20, markerfacecolor='black')
 ]
 
-# plt.legend(handles=legend_elements, loc='upper right')
 
 plt.legend(handles=legend_elements, loc='center left', bbox_to_anchor=(1, 0.5))
 plt.xlabel('P24 Hour Classifications')
-# plt.ylabel('Trail')
-# plt.title('Trail Status Over Time')
 today_date_time = datetime.today().strftime('%Y/%m/%d %I:%M %p')
 plt.title(f"CORA Automated Trail Status Over Time: Last Updated ({today_date_time})", fontsize=18, pad=20)
 
@@ -641,6 +617,72 @@ s3.upload_file(filename_local, bucket_name, filename_s3, ExtraArgs={'ACL': 'publ
 print("Trail Status Image sent to S3")
 
 plt.close()
+
+#####
+## JSON Writeout
+#####
+
+log_df_json_input = log_df.copy()
+print("print len of log df for json processing", len(log_df_json_input))
+
+# Function to get relevant timestamps for each group
+def get_relevant_timestamps(group):
+    # Sort by timestamp_with_date to ensure proper ordering
+    group = group.sort_values(by='timestamp_with_date')
+
+    # Detect status changes
+    group['status_changed'] = group['trail_status'] != group['trail_status'].shift(1)
+
+    # Get the most recent timestamp
+    most_recent_timestamp = group.iloc[-1:]
+
+    # Get the most recent timestamp where the trail_status is different from the current status
+    if group['status_changed'].any():
+        last_status_change = group[group['status_changed']].iloc[-2:-1]  # Select the second to last status change
+    else:
+        last_status_change = most_recent_timestamp
+
+    # Add data_type column
+    most_recent_timestamp['data_type'] = 'current'
+    last_status_change['data_type'] = 'last_status_change'
+
+    # Concatenate and clean up
+    result = pd.concat([most_recent_timestamp, last_status_change]).drop_duplicates()
+    result = result.sort_index()
+    result = result.drop(columns=['status_changed'])
+    
+    return result
+
+# Apply the function to each group
+log_df_json = log_df_json_input.groupby('trail').apply(get_relevant_timestamps).reset_index(drop=True)
+log_df_json['timestamp'] = log_df_json['timestamp'].apply(lambda ts: reformat_timestamp_to_relative(ts, current_timestamp))
+print("filtered log data for JSON", log_df_json.head(30))
+
+# Create a dictionary from the DataFrame
+print(log_df_json.dtypes)
+print("log_df_json", log_df_json.head(1))
+log_df_json_dict = log_df_json.to_dict(orient='records')
+print("Full Dict", log_df_json_dict)
+log_df_json = json.dumps(log_df_json_dict, indent=4)
+json_filename = 'trail_status_full.json'
+with open(json_filename, 'w') as json_file:
+    json_file.write(log_df_json)
+s3.upload_file(json_filename, bucket_name, json_filename, ExtraArgs={'ACL': 'public-read'})
+
+print("###############################")
+
+# # Create a dictionary from the DataFrame
+# log_df_json_trim = log_df_json[['trail', 'timestamp', 'timestamp_with_date', 'trail_status']].copy()
+# print("log_df_json", log_df_json.head(1))
+# log_df_json_dict = log_df_json.to_dict(orient='records')
+# print("Trimmed Dict", log_df_json_dict)
+# log_df_json = json.dumps(log_df_json_dict, indent=4)
+# json_filename = 'trail_status_trimmed.json'
+# with open(json_filename, 'w') as json_file:
+#     json_file.write(log_df_json)
+# s3.upload_file(json_filename, bucket_name, json_filename, ExtraArgs={'ACL': 'public-read'})
+
+print("Trail Status JSON sent to S3")
 
 
 ######
