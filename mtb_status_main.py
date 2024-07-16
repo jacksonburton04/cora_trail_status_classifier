@@ -28,8 +28,8 @@ from utils import *
 
 warnings.filterwarnings('ignore')
 
-# config_file_path = 'data/dev_config.json'
-config_file_path = '/root/cora_trail_status_classifier/data/prod_config.json'
+config_file_path = 'data/dev_config.json'
+# config_file_path = '/root/cora_trail_status_classifier/data/prod_config.json'
 
 with open(config_file_path, 'r') as config_file:
     config = json.load(config_file)
@@ -441,7 +441,7 @@ def trail_status(row):
         closest_status = sorted_statuses[0]
         next_closest_status = sorted_statuses[1]
 
-        return closest_status, next_closest_status
+        return closest_status, next_closest_status, weighted_average_score
     
     prcp_values = {
         'prcp_4h': prcp_4h,
@@ -456,12 +456,12 @@ def trail_status(row):
     print("processing this row of data", row[['trail', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h']])
     print("Result: ", get_trail_status(prcp_values))
     
-    closest_status, next_closest_status = get_trail_status(prcp_values)
-    return pd.Series({'trail_status': closest_status, 'next_closest_trail_status': next_closest_status})
+    closest_status, next_closest_status, weighted_avg_score = get_trail_status(prcp_values)
+    return pd.Series({'trail_status': closest_status, 'next_closest_trail_status': next_closest_status, 'weighted_avg_score': round(weighted_avg_score, 2)})
 
 # Applying the updated function to the DataFrame
-final_df[['trail_status', 'next_closest_trail_status']] = final_df.apply(trail_status, axis=1)
-print(final_df[['trail', 'PRCP_24h', 'PRCP_8h', 'PRCP_48h', 'PRCP_16h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'TMAX_24h', 'DEW_POINT_24h', 'trail_status', 'next_closest_trail_status']])
+final_df[['trail_status', 'next_closest_trail_status', 'weighted_avg_score']] = final_df.apply(trail_status, axis=1)
+print(final_df[['trail', 'PRCP_24h', 'PRCP_8h', 'PRCP_48h', 'PRCP_16h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'TMAX_24h', 'DEW_POINT_24h', 'trail_status', 'next_closest_trail_status', 'weighted_avg_score']])
 
 
 # Initialize the S3 client
@@ -479,7 +479,7 @@ def load_existing_log():
         log_df = pd.read_csv(io.BytesIO(obj['Body'].read()))
         return log_df
     except s3_client.exceptions.NoSuchKey:
-        return pd.DataFrame(columns=['trail', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'trail_status', 'next_closest_trail_status', 'timestamp'])
+        return pd.DataFrame(columns=['trail', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'trail_status', 'next_closest_trail_status', 'weighted_avg_score', 'timestamp'])
 
 def save_log_to_s3(log_df):
     csv_buffer = io.StringIO()
@@ -502,7 +502,7 @@ def append_to_log(final_df):
     return log_df
 
 # Append the final_df to log
-log_df = append_to_log(final_df[['trail', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'trail_status', 'next_closest_trail_status',]]) #timestamp is created, not inputted
+log_df = append_to_log(final_df[['trail', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'trail_status', 'next_closest_trail_status', 'weighted_avg_score']]) #timestamp is created, not inputted
 
 # To send full timestamp for QA purposes to Nathan at CORA
 log_df['timestamp_with_date'] = log_df['timestamp']
@@ -625,9 +625,9 @@ plt.close()
 log_df_json_input = log_df.copy()
 print("print len of log df for json processing", len(log_df_json_input))
 
-# Function to get relevant timestamps for each group
 def get_relevant_timestamps(group):
     # Sort by timestamp_with_date to ensure proper ordering
+    group['timestamp_with_date'] = pd.to_datetime(group['timestamp_with_date'])
     group = group.sort_values(by='timestamp_with_date')
 
     # Detect status changes
@@ -638,24 +638,36 @@ def get_relevant_timestamps(group):
 
     # Get the most recent timestamp where the trail_status is different from the current status
     if group['status_changed'].any():
-        last_status_change = group[group['status_changed']].iloc[-2:-1]  # Select the second to last status change
+        # Get the last status change row
+        last_status_change = group[group['status_changed']].tail(1)
     else:
         last_status_change = most_recent_timestamp
 
+    # Find the timestamp 1 hour prior to the last status change
+    one_hour_prior = last_status_change['timestamp_with_date'].iloc[0] - pd.Timedelta(hours=1)
+
+    # Find the row with the timestamp 1 hour prior
+    one_hour_prior_row = group[group['timestamp_with_date'] == one_hour_prior]
+
+    assert most_recent_timestamp['trail_status'].values[0] != one_hour_prior_row['trail_status'].values[0]
+
     # Add data_type column
-    most_recent_timestamp['data_type'] = 'current'
-    last_status_change['data_type'] = 'last_status_change'
+    most_recent_timestamp['data_type'] = 'current_trail_status'
+    one_hour_prior_row['data_type'] = 'previous_trail_status'
 
     # Concatenate and clean up
-    result = pd.concat([most_recent_timestamp, last_status_change]).drop_duplicates()
+    print("MOST RECENT", most_recent_timestamp)
+    print("LAST STATUS CHANGE", one_hour_prior_row)
+    result = pd.concat([most_recent_timestamp, one_hour_prior_row]).drop_duplicates()
     result = result.sort_index()
     result = result.drop(columns=['status_changed'])
-    
+
     return result
 
 # Apply the function to each group
 log_df_json = log_df_json_input.groupby('trail').apply(get_relevant_timestamps).reset_index(drop=True)
 log_df_json['timestamp'] = log_df_json['timestamp'].apply(lambda ts: reformat_timestamp_to_relative(ts, current_timestamp))
+log_df_json['timestamp_with_date'] = log_df_json['timestamp_with_date'].dt.strftime('%Y-%m-%d %H:%M:%S')
 print("filtered log data for JSON", log_df_json.head(30))
 
 # Create a dictionary from the DataFrame
