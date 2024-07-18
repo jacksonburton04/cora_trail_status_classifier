@@ -668,6 +668,7 @@ def get_relevant_timestamps(group):
 log_df_json = log_df_json_input.groupby('trail').apply(get_relevant_timestamps).reset_index(drop=True)
 log_df_json['timestamp'] = log_df_json['timestamp'].apply(lambda ts: reformat_timestamp_to_relative(ts, current_timestamp))
 log_df_json['timestamp_with_date'] = log_df_json['timestamp_with_date'].dt.strftime('%Y-%m-%d %H:%M:%S')
+log_df_json['weighted_avg_score'] = log_df_json['weighted_avg_score'].fillna("N/A")
 print("filtered log data for JSON", log_df_json.head(30))
 
 # Create a dictionary from the DataFrame
