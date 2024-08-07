@@ -166,10 +166,10 @@ def accuweather_data(df_trail_locations, api_key):
     # Remove duplicates, keeping the most recent 'run_datetime'
     hourly_weather = hourly_weather.sort_values(by='run_datetime').drop_duplicates(subset=['HOUR', 'Trail'], keep='last')
 
-    # Filter data to the most recent 10 days
-    ten_days_ago = datetime.now() - timedelta(days=10)
+    # Filter data to the most recent 15 days
+    days_ago_filter = datetime.now() - timedelta(days=15)
     hourly_weather['HOUR'] = pd.to_datetime(hourly_weather['HOUR'])
-    hourly_weather = hourly_weather[hourly_weather['HOUR'] >= ten_days_ago]
+    hourly_weather = hourly_weather[hourly_weather['HOUR'] >= days_ago_filter]
 
     # Save the updated data back to S3
     hourly_weather.to_csv(csv_file_key, index=False)
@@ -248,7 +248,7 @@ weather_data_hourly = weather_data_main[weather_data_main["HOUR"].notnull()]
 yesterday = pd.Timestamp.now().normalize() - pd.Timedelta(days=1)
 
 print("Hourly Data:\n", weather_data_hourly.sort_values(["trail", "DATE"], ascending = [False, False]).head(35))
-lookback_hours_list = [4, 8, 16, 24, 48, 72, 96, 120, 144, 168]
+lookback_hours_list = [4, 8, 16, 24, 48, 72, 96, 120, 144, 168, 336]
 
 # Assume weather_data_hourly and weather_data_daily are already defined
 # daily_df = calculate_rolling_metrics_daily(weather_data_daily, lookback_days_list)
@@ -266,11 +266,11 @@ final_df.to_csv("final_df.csv")
 ### 
 
 df_class = final_df[['trail', 
-                     'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 
+                     'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'PRCP_336h', 
                      'PRCP_4h', 'PRCP_8h', 'PRCP_16h',
-                     'TMAX_24h', 'TMAX_48h', 'TMAX_72h', 'TMAX_120h', 'TMAX_168h', 
+                     'TMAX_24h', 'TMAX_48h', 'TMAX_72h', 'TMAX_120h', 'TMAX_168h', 'TMAX_336h', 
                      'TMAX_4h', 'TMAX_8h', 'TMAX_16h',
-                     'DEW_POINT_24h', 'DEW_POINT_48h', 'DEW_POINT_72h', 'DEW_POINT_120h', 'DEW_POINT_168h', 
+                     'DEW_POINT_24h', 'DEW_POINT_48h', 'DEW_POINT_72h', 'DEW_POINT_120h', 'DEW_POINT_168h', 'DEW_POINT_336h',
                      'DEW_POINT_4h', 'DEW_POINT_8h', 'DEW_POINT_16h'
                      ]]
 
@@ -347,6 +347,7 @@ def trail_status(row):
     prcp_72h = row['PRCP_72h']
     prcp_120h = row['PRCP_120h']
     prcp_168h = row['PRCP_168h']
+    prcp_336h = row['PRCP_336h']
     tmax_4h = row['TMAX_4h']
     tmax_8h = row['TMAX_8h']
     tmax_16h = row['TMAX_16h']
@@ -355,6 +356,7 @@ def trail_status(row):
     tmax_72h = row['TMAX_72h']
     tmax_120h = row['TMAX_120h']
     tmax_168h = row['TMAX_168h']
+    tmax_336h = row['TMAX_336h']
     dew_point_4h = row['DEW_POINT_4h']
     dew_point_8h = row['DEW_POINT_8h']
     dew_point_16h = row['DEW_POINT_16h']
@@ -363,6 +365,7 @@ def trail_status(row):
     dew_point_72h = row['DEW_POINT_72h']
     dew_point_120h = row['DEW_POINT_120h']
     dew_point_168h = row['DEW_POINT_168h']
+    dew_point_336h = row['DEW_POINT_336h']
     trail = row['trail']
 
     # Adjust precipitation values
@@ -374,8 +377,9 @@ def trail_status(row):
     prcp_72h = adjust_prcp(prcp_72h, tmax_72h, dew_point_72h, trail)
     prcp_120h = adjust_prcp(prcp_120h, tmax_120h, dew_point_120h, trail)
     prcp_168h = adjust_prcp(prcp_168h, tmax_168h, dew_point_168h, trail)
+    prcp_336h = adjust_prcp(prcp_336h, tmax_336h, dew_point_336h, trail)
 
-    dimensions = ['prcp_4h', 'prcp_8h', 'prcp_16h', 'prcp_24h', 'prcp_48h', 'prcp_72h', 'prcp_120h', 'prcp_168h']
+    dimensions = ['prcp_4h', 'prcp_8h', 'prcp_16h', 'prcp_24h', 'prcp_48h', 'prcp_72h', 'prcp_120h', 'prcp_168h', 'prcp_336h']
     status_levels = ['DEFINITE CLOSE', 'LIKELY CLOSE', 'LIKELY WET/OPEN', 'LIKELY OPEN', 'DEFINITE OPEN']
 
     # Initialize dictionaries to store the threshold values
@@ -408,9 +412,11 @@ def trail_status(row):
                 if greater_than['prcp_72h'][status] <= prcp_values['prcp_72h'] <= less_than['prcp_72h'][status]:
                     count += 1
                 if greater_than['prcp_120h'][status] <= prcp_values['prcp_120h'] <= less_than['prcp_120h'][status]:
-                    count += 1
+                    count += 0.75
                 if greater_than['prcp_168h'][status] <= prcp_values['prcp_168h'] <= less_than['prcp_168h'][status]:
-                    count += 1
+                    count += 0.75
+                if greater_than['prcp_336h'][status] <= prcp_values['prcp_336h'] <= less_than['prcp_336h'][status]:
+                    count += 2
             except KeyError as e:
                 print(f"KeyError: {e}. prcp_values: {prcp_values}")
 
@@ -451,9 +457,10 @@ def trail_status(row):
         'prcp_48h': prcp_48h,
         'prcp_72h': prcp_72h,
         'prcp_120h': prcp_120h,
-        'prcp_168h': prcp_168h
+        'prcp_168h': prcp_168h,
+        'prcp_336h': prcp_336h
     }
-    print("processing this row of data", row[['trail', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h']])
+    print("processing this row of data", row[['trail', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'PRCP_336h']])
     print("Result: ", get_trail_status(prcp_values))
     
     closest_status, next_closest_status, weighted_avg_score = get_trail_status(prcp_values)
@@ -461,7 +468,7 @@ def trail_status(row):
 
 # Applying the updated function to the DataFrame
 final_df[['trail_status', 'next_closest_trail_status', 'weighted_avg_score']] = final_df.apply(trail_status, axis=1)
-print(final_df[['trail', 'PRCP_24h', 'PRCP_8h', 'PRCP_48h', 'PRCP_16h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'TMAX_24h', 'DEW_POINT_24h', 'trail_status', 'next_closest_trail_status', 'weighted_avg_score']])
+print(final_df[['trail', 'PRCP_24h', 'PRCP_8h', 'PRCP_48h', 'PRCP_16h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'PRCP_336h', 'TMAX_24h', 'DEW_POINT_24h', 'trail_status', 'next_closest_trail_status', 'weighted_avg_score']])
 
 
 # Initialize the S3 client
@@ -479,7 +486,7 @@ def load_existing_log():
         log_df = pd.read_csv(io.BytesIO(obj['Body'].read()))
         return log_df
     except s3_client.exceptions.NoSuchKey:
-        return pd.DataFrame(columns=['trail', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'trail_status', 'next_closest_trail_status', 'weighted_avg_score', 'timestamp'])
+        return pd.DataFrame(columns=['trail', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'PRCP_336h', 'trail_status', 'next_closest_trail_status', 'weighted_avg_score', 'timestamp'])
 
 def save_log_to_s3(log_df):
     csv_buffer = io.StringIO()
@@ -502,24 +509,25 @@ def append_to_log(final_df):
     return log_df
 
 # Append the final_df to log
-log_df = append_to_log(final_df[['trail', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'trail_status', 'next_closest_trail_status', 'weighted_avg_score']]) #timestamp is created, not inputted
+log_df = append_to_log(final_df[['trail', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'PRCP_336h', 'trail_status', 'next_closest_trail_status', 'weighted_avg_score']]) #timestamp is created, not inputted
 
 # To send full timestamp for QA purposes to Nathan at CORA
 log_df['timestamp_with_date'] = log_df['timestamp']
 
-print("LOG DF", log_df.head())
+print("LOG DF", log_df.head(50))
 #### VIEW LOG
 
 #### VIEW LOG
 print("VIEW LOG ######")
 # Get current timestamp and past 24 hours timestamp
 current_timestamp = datetime.now().replace(minute=59, second=0, microsecond=0)
-past_24_hours = current_timestamp - timedelta(hours=24)
+
+time_filter = current_timestamp - timedelta(hours=336)
 
 # Filter log_df based on timestamp in past 24 hours and sort it
 # the script runs once per hour, so duplicates should only exist when in DEV mode locally running it more than 1X per hour
 # will drop duplicates at random to deal with this
-log_df_for_email = log_df[log_df['timestamp'] >= past_24_hours.strftime('%Y-%m-%d %H:%M:%S')].sort_values(['trail', 'timestamp'], ascending=[True, True])[['trail', 'timestamp', 'trail_status', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h']].drop_duplicates(subset=['trail', 'timestamp'])
+log_df_for_email = log_df[log_df['timestamp'] >= time_filter.strftime('%Y-%m-%d %H:%M:%S')].sort_values(['trail', 'timestamp'], ascending=[True, True])[['trail', 'timestamp', 'trail_status', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'PRCP_336h']].drop_duplicates(subset=['trail', 'timestamp'])
 log_df_visual = log_df_for_email.copy()
 
 def reformat_timestamp_to_relative(timestamp, current_timestamp):
@@ -542,12 +550,13 @@ print(log_df_for_email.head(50))
 
 # Generate unique trail codes dynamically
 unique_trails = log_df['trail'].dropna().unique()  # Exclude NaNs from unique values
+print("unique trails: ", unique_trails)
 trail_mapping = {trail: f"t_{chr(97 + i)}" for i, trail in enumerate(unique_trails)}
-
+print("trail_mapping:", trail_mapping)
 # Add a mapping for NaNs or unknowns
 trail_mapping[None] = "t_unknown"
 trail_mapping['Unknown Trail'] = "t_unknown"
-
+print("trail_mapping:", trail_mapping)
 # Reverse mapping for full text replacement
 trail_reverse_mapping = {v: k for k, v in trail_mapping.items()}
 print("trail_mapping:", trail_mapping)
@@ -555,18 +564,21 @@ print("trail_mapping:", trail_mapping)
 # Generate unique status codes dynamically
 unique_statuses = log_df['trail_status'].dropna().unique()  # Exclude NaNs from unique values
 status_mapping = {status: f"s_{i + 1}" for i, status in enumerate(unique_statuses)}
-
 # Add a mapping for NaNs or unknowns
 status_mapping[None] = "s_unknown"
 status_mapping['Unknown Status'] = "s_unknown"
-
 status_reverse_mapping = {v: k for k, v in status_mapping.items()}
 print("status_mapping:", status_mapping)
+
+print("CHECK TO MAKE SURE ALL TRAILS IN LOG_DF_FOR_EMAIL")
+print(log_df_for_email['trail'].unique())
 
 # Map trail and trail_status in the log_df_for_email DataFrame
 log_df_for_email['trail'] = log_df_for_email['trail'].map(trail_mapping)
 log_df_for_email['trail_status'] = log_df_for_email['trail_status'].map(status_mapping)
 
+print("CHECK TO MAKE SURE ALL TRAILS IN LOG_DF_FOR_EMAIL")
+print(log_df_for_email['trail'].unique())
 #####
 ## PLOT 
 #####
@@ -623,7 +635,7 @@ plt.close()
 #####
 
 log_df_json_input = log_df.copy()
-print("print len of log df for json processing", len(log_df_json_input))
+# print("print len of log df for json processing", len(log_df_json_input))
 
 def get_relevant_timestamps(group):
     # Sort by timestamp_with_date to ensure proper ordering
@@ -656,8 +668,8 @@ def get_relevant_timestamps(group):
     one_hour_prior_row['data_type'] = 'previous_trail_status'
 
     # Concatenate and clean up
-    print("MOST RECENT", most_recent_timestamp)
-    print("LAST STATUS CHANGE", one_hour_prior_row)
+    # print("MOST RECENT", most_recent_timestamp)
+    # print("LAST STATUS CHANGE", one_hour_prior_row)
     result = pd.concat([most_recent_timestamp, one_hour_prior_row]).drop_duplicates()
     result = result.sort_index()
     result = result.drop(columns=['status_changed'])
@@ -669,13 +681,13 @@ log_df_json = log_df_json_input.groupby('trail').apply(get_relevant_timestamps).
 log_df_json['timestamp'] = log_df_json['timestamp'].apply(lambda ts: reformat_timestamp_to_relative(ts, current_timestamp))
 log_df_json['timestamp_with_date'] = log_df_json['timestamp_with_date'].dt.strftime('%Y-%m-%d %H:%M:%S')
 log_df_json['weighted_avg_score'] = log_df_json['weighted_avg_score'].fillna("N/A")
-print("filtered log data for JSON", log_df_json.head(30))
+print("filtered log data for JSON", log_df_json.head(5))
 
 # Create a dictionary from the DataFrame
-print(log_df_json.dtypes)
+# print(log_df_json.dtypes)
 print("log_df_json", log_df_json.head(1))
 log_df_json_dict = log_df_json.to_dict(orient='records')
-print("Full Dict", log_df_json_dict)
+# print("Full Dict", log_df_json_dict)
 log_df_json = json.dumps(log_df_json_dict, indent=4)
 json_filename = 'trail_status_full.json'
 with open(json_filename, 'w') as json_file:
@@ -702,9 +714,10 @@ print("Trail Status JSON sent to S3")
 # EMAIL
 #######
 
+
 # Check if the current hour is 8, 12, or 16 (4 PM)
 current_hour = datetime.now().hour
-if current_hour in [8,16]:
+if current_hour in [8,16, 17]:
 
     import smtplib
     from email.mime.multipart import MIMEMultipart
@@ -723,7 +736,6 @@ if current_hour in [8,16]:
     df_filtered = final_df[['trail', 'trail_status']]
     df_filtered = df_filtered.sort_values(by='trail')
 
-
     # Set the flag for running OpenAI API
     run_openai_api = True  # Change this to False if you want to skip the OpenAI API call
 
@@ -731,16 +743,23 @@ if current_hour in [8,16]:
         openai.api_key = openai_api_key
 
         # Call the OpenAI API to generate summary
-        df_summary_input = ("""Please point out trail status changes and use the PRCP values to explain why you think the Trail status may have changed. Focus on the most recent changes (timestamp DESC) for each trail value: {}""".format(log_df_for_email.to_string(index=False)))
+        print("CHECK TO MAKE SURE ALL TRAILS IN LOG_DF_FOR_EMAIL")
+        print(log_df_for_email['trail'].unique())
+        df_summary_input = ("""Please point out trail status changes and use the PRCP values to explain why you think the Trail status may have changed. Please convert hours to days when 24h or higher (e.g. 24h is 1 day, 48h is 2 days):  {}""".format(log_df_for_email.to_string(index=False))) #Focus on the most recent changes (timestamp DESC) for each trail value:
 
         response = openai.ChatCompletion.create(
-            model="gpt-4o",  
-            temperature=0.3,
-            max_tokens=2000,
+            model="gpt-4o-2024-08-06",  
+            temperature=0.2,
+            max_tokens=3000,
             messages=[
-                {"role": "system", "content": "You send out daily automated emails to all the local Cincinnati Mountain Bikers. You use a semi-casual semi-formal tone."},
+                {"role": "system", "content": "You send out daily automated emails to all the local Cincinnati Mountain Bikers. Do not output any ** characters in your email. Leave the t_1, t_2, etc formatting as is, do not try to reformat. You use a semi-formal but laid back tone. You begin your emails with an analysis summary, then go trail by trail giving more detailed analysis. You order your responses t_1, t_2, t_3, and so on."},
                 {"role": "user", "content": df_summary_input}
             ]
+                        # response_format=EmailOutput
+        #                 from pydantic import BaseModel
+        # class EmailOutput(BaseModel):
+        #     trail: str
+        #     explanation: str
         )
 
         # Convert short codes back to full text in the response
@@ -750,6 +769,7 @@ if current_hour in [8,16]:
         for short_code, full_text in trail_reverse_mapping.items():
             df_summary = df_summary.replace(short_code, full_text)
         df_summary = df_summary.replace('\n', '<br>')
+        df_summary = df_summary.replace('**', '')
     else:
         df_summary = "OpenAI API was not called. Here is the trail status data without the summary."
 
@@ -793,18 +813,19 @@ if current_hour in [8,16]:
     trail_changes = log_df_for_email.groupby('trail').apply(lambda df: get_trail_changes(df, df['trail'].iloc[0])).to_dict()
     trail_changes = dict(sorted(trail_changes.items()))
 
-    bullet_points = df_filtered.apply(lambda row: f"<li><strong>{row['trail']}:</strong> {format_trail_status(row['trail_status'])}</li>", axis=1).tolist()
+    bullet_points = df_filtered.apply(lambda row: f"<li>{row['trail']}: {format_trail_status(row['trail_status'])}</li>", axis=1).tolist()
     bullet_points_html = "<ul>" + "".join(bullet_points) + "</ul>"
+
 
     # Prepare the email body with individual headers for each 'CORA Trail'
     today_date = datetime.now().strftime("%Y-%m-%d")
     email_body = f"""
-    <h2>{today_date} Weather Report</h2>
+    <h2>{today_date} Cincinnati MTB Trail Report</h2>
     <h3>Trail Status Data:</h3>
     {bullet_points_html}
     <hr>
     </h2>OpenAI Analysis:</h2>
-    {df_summary}
+    <p>{df_summary}</p>
     </h2>Last Two Days - See Changes Over Time:</h2>
     """
 
