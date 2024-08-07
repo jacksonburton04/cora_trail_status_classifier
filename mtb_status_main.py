@@ -511,6 +511,11 @@ def append_to_log(final_df):
 # Append the final_df to log
 log_df = append_to_log(final_df[['trail', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'PRCP_336h', 'trail_status', 'next_closest_trail_status', 'weighted_avg_score']]) #timestamp is created, not inputted
 
+###
+# 2024-08-07 temp solution
+# I do need to figure out a better way to handle "new variables" to the logic, when I dont have their history stored
+log_df['PRCP_336h'] = log_df['PRCP_336h'].fillna(5) # 5 inches corresponds with YELLOW
+
 # To send full timestamp for QA purposes to Nathan at CORA
 log_df['timestamp_with_date'] = log_df['timestamp']
 
@@ -546,20 +551,17 @@ log_df_for_email = log_df_for_email[log_df_for_email['status_changed']]
 log_df_for_email = log_df_for_email.drop(columns=['status_changed'])
 print(log_df_for_email.head(50))
 
+
 ### REDUCE TOKEN SIZE
 
 # Generate unique trail codes dynamically
 unique_trails = log_df['trail'].dropna().unique()  # Exclude NaNs from unique values
-print("unique trails: ", unique_trails)
 trail_mapping = {trail: f"t_{chr(97 + i)}" for i, trail in enumerate(unique_trails)}
-print("trail_mapping:", trail_mapping)
 # Add a mapping for NaNs or unknowns
 trail_mapping[None] = "t_unknown"
 trail_mapping['Unknown Trail'] = "t_unknown"
-print("trail_mapping:", trail_mapping)
 # Reverse mapping for full text replacement
 trail_reverse_mapping = {v: k for k, v in trail_mapping.items()}
-print("trail_mapping:", trail_mapping)
 
 # Generate unique status codes dynamically
 unique_statuses = log_df['trail_status'].dropna().unique()  # Exclude NaNs from unique values
@@ -568,17 +570,16 @@ status_mapping = {status: f"s_{i + 1}" for i, status in enumerate(unique_statuse
 status_mapping[None] = "s_unknown"
 status_mapping['Unknown Status'] = "s_unknown"
 status_reverse_mapping = {v: k for k, v in status_mapping.items()}
-print("status_mapping:", status_mapping)
 
-print("CHECK TO MAKE SURE ALL TRAILS IN LOG_DF_FOR_EMAIL")
-print(log_df_for_email['trail'].unique())
+# print("CHECK TO MAKE SURE ALL TRAILS IN LOG_DF_FOR_EMAIL")
+# print(log_df_for_email['trail'].unique())
 
 # Map trail and trail_status in the log_df_for_email DataFrame
 log_df_for_email['trail'] = log_df_for_email['trail'].map(trail_mapping)
 log_df_for_email['trail_status'] = log_df_for_email['trail_status'].map(status_mapping)
 
-print("CHECK TO MAKE SURE ALL TRAILS IN LOG_DF_FOR_EMAIL")
-print(log_df_for_email['trail'].unique())
+# print("CHECK TO MAKE SURE ALL TRAILS IN LOG_DF_FOR_EMAIL")
+# print(log_df_for_email['trail'].unique())
 #####
 ## PLOT 
 #####
@@ -635,7 +636,7 @@ plt.close()
 #####
 
 log_df_json_input = log_df.copy()
-# print("print len of log df for json processing", len(log_df_json_input))
+print("print len of log df for json processing", len(log_df_json_input))
 
 def get_relevant_timestamps(group):
     # Sort by timestamp_with_date to ensure proper ordering
@@ -644,6 +645,8 @@ def get_relevant_timestamps(group):
 
     # Detect status changes
     group['status_changed'] = group['trail_status'] != group['trail_status'].shift(1)
+
+    print("group head", group.sort_values('timestamp', ascending = False).head(25))
 
     # Get the most recent timestamp
     most_recent_timestamp = group.iloc[-1:]
@@ -656,10 +659,19 @@ def get_relevant_timestamps(group):
         last_status_change = most_recent_timestamp
 
     # Find the timestamp 1 hour prior to the last status change
+    # 2024-08-07: for some reason, the script failed for a few hours so one_hour_prior was also failing
     one_hour_prior = last_status_change['timestamp_with_date'].iloc[0] - pd.Timedelta(hours=1)
 
     # Find the row with the timestamp 1 hour prior
     one_hour_prior_row = group[group['timestamp_with_date'] == one_hour_prior]
+
+    if one_hour_prior_row.empty:
+        # If no exact match is found, find the closest prior timestamp
+        # This works properly because the DATETIME values are sorted DESCENDING
+        one_hour_prior_row = group[group['timestamp_with_date'] < one_hour_prior].tail(1)
+    
+    print("Most recent timestamp: ", most_recent_timestamp['trail_status'].values[0])
+    print("1 hour prior timestamp: ", one_hour_prior_row['trail_status'].values[0])
 
     assert most_recent_timestamp['trail_status'].values[0] != one_hour_prior_row['trail_status'].values[0]
 
@@ -717,7 +729,7 @@ print("Trail Status JSON sent to S3")
 
 # Check if the current hour is 8, 12, or 16 (4 PM)
 current_hour = datetime.now().hour
-if current_hour in [8,16, 17]:
+if current_hour in [8,16]:
 
     import smtplib
     from email.mime.multipart import MIMEMultipart
