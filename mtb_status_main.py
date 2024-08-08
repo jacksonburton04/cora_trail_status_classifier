@@ -294,12 +294,14 @@ url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sh
 df_gsheet_if_statements = pd.read_csv(url)
 print(df_gsheet_if_statements.head(10))
 
-def adjust_prcp(prcp, tmax, dew_point, trail):
+def adjust_prcp(prcp, tmax, dew_point, trail, prcp_336h):
     # Adjust based on TMAX
-    if tmax > 90:
+    if tmax > 95:
         prcp *= 0.90
-    elif tmax > 85:
+    elif tmax > 90:
         prcp *= 0.95   
+    elif tmax > 85:
+        prcp *= 1.0   
     elif tmax > 70:
         prcp *= 1.0 
     elif tmax <= 45:
@@ -313,15 +315,33 @@ def adjust_prcp(prcp, tmax, dew_point, trail):
 
     # Adjust based on DEW_POINT DIFF
     if dew_point_temp_diff < 5:
-        prcp *= 1.3
+        prcp *= 1.25
     elif dew_point_temp_diff < 10:
-        prcp *= 1.2
+        prcp *= 1.15
     elif dew_point_temp_diff < 15:
-        prcp *= 1.1  
+        prcp *= 1.05  
     elif dew_point_temp_diff < 20:
         prcp *= 0.95
     elif dew_point_temp_diff < 25:
         prcp *= 0.9 
+    elif dew_point_temp_diff < 35:
+        prcp *= 0.85
+
+    ## If its been super dry past two weeks, adjust PRCP values
+    if prcp_336h > 10:
+        prcp *= 1.2
+    elif prcp_336h > 8:
+        prcp *= 1.1 
+    elif prcp_336h > 5:
+        prcp *= 1.0 
+    elif prcp_336h <= 5:
+        prcp *= 0.9
+    elif prcp_336h <= 4:
+        prcp *= 0.85   
+    elif prcp_336h <= 2.5:
+        prcp *= 0.8
+    elif prcp_336h <= 1.5:
+        prcp *= 0.75
     
     # Apply trail adjustment if the trail is in the adjustment list
     if trail in trail_adjustments:
@@ -369,15 +389,15 @@ def trail_status(row):
     trail = row['trail']
 
     # Adjust precipitation values
-    prcp_4h = adjust_prcp(prcp_4h, tmax_4h, dew_point_4h, trail)
-    prcp_8h = adjust_prcp(prcp_8h, tmax_8h, dew_point_8h, trail)
-    prcp_16h = adjust_prcp(prcp_16h, tmax_16h, dew_point_16h, trail)
-    prcp_24h = adjust_prcp(prcp_24h, tmax_24h, dew_point_24h, trail)
-    prcp_48h = adjust_prcp(prcp_48h, tmax_48h, dew_point_48h, trail)
-    prcp_72h = adjust_prcp(prcp_72h, tmax_72h, dew_point_72h, trail)
-    prcp_120h = adjust_prcp(prcp_120h, tmax_120h, dew_point_120h, trail)
-    prcp_168h = adjust_prcp(prcp_168h, tmax_168h, dew_point_168h, trail)
-    prcp_336h = adjust_prcp(prcp_336h, tmax_336h, dew_point_336h, trail)
+    prcp_4h = adjust_prcp(prcp_4h, tmax_4h, dew_point_4h, trail, prcp_336h)
+    prcp_8h = adjust_prcp(prcp_8h, tmax_8h, dew_point_8h, trail, prcp_336h)
+    prcp_16h = adjust_prcp(prcp_16h, tmax_16h, dew_point_16h, trail, prcp_336h)
+    prcp_24h = adjust_prcp(prcp_24h, tmax_24h, dew_point_24h, trail, prcp_336h)
+    prcp_48h = adjust_prcp(prcp_48h, tmax_48h, dew_point_48h, trail, prcp_336h)
+    prcp_72h = adjust_prcp(prcp_72h, tmax_72h, dew_point_72h, trail, prcp_336h)
+    prcp_120h = adjust_prcp(prcp_120h, tmax_120h, dew_point_120h, trail, prcp_336h)
+    prcp_168h = adjust_prcp(prcp_168h, tmax_168h, dew_point_168h, trail, prcp_336h)
+    prcp_336h = adjust_prcp(prcp_336h, tmax_336h, dew_point_336h, trail, prcp_336h)
 
     dimensions = ['prcp_4h', 'prcp_8h', 'prcp_16h', 'prcp_24h', 'prcp_48h', 'prcp_72h', 'prcp_120h', 'prcp_168h', 'prcp_336h']
     status_levels = ['DEFINITE CLOSE', 'LIKELY CLOSE', 'LIKELY WET/OPEN', 'LIKELY OPEN', 'DEFINITE OPEN']
@@ -416,7 +436,7 @@ def trail_status(row):
                 if greater_than['prcp_168h'][status] <= prcp_values['prcp_168h'] <= less_than['prcp_168h'][status]:
                     count += 0.75
                 if greater_than['prcp_336h'][status] <= prcp_values['prcp_336h'] <= less_than['prcp_336h'][status]:
-                    count += 2
+                    count += 0.25
             except KeyError as e:
                 print(f"KeyError: {e}. prcp_values: {prcp_values}")
 
@@ -646,7 +666,7 @@ def get_relevant_timestamps(group):
     # Detect status changes
     group['status_changed'] = group['trail_status'] != group['trail_status'].shift(1)
 
-    print("group head", group.sort_values('timestamp', ascending = False).head(25))
+    # print("group head", group.sort_values('timestamp', ascending = False).head(25))
 
     # Get the most recent timestamp
     most_recent_timestamp = group.iloc[-1:]
@@ -670,6 +690,7 @@ def get_relevant_timestamps(group):
         # This works properly because the DATETIME values are sorted DESCENDING
         one_hour_prior_row = group[group['timestamp_with_date'] < one_hour_prior].tail(1)
     
+    print(group['trail'].unique())
     print("Most recent timestamp: ", most_recent_timestamp['trail_status'].values[0])
     print("1 hour prior timestamp: ", one_hour_prior_row['trail_status'].values[0])
 
