@@ -221,7 +221,6 @@ hourly_accuweather['DATE'] = hourly_accuweather['HOUR'].dt.strftime('%Y-%m-%d')
 hourly_accuweather['HOUR'] = hourly_accuweather['HOUR'].dt.strftime('%H')
 hourly_accuweather.to_csv("hourly_accuweather.csv")
 
-
 weather_append = hourly_accuweather.drop_duplicates(subset=['DATE', 'Trail', 'HOUR', 'TOTAL PRECIPITATION'], keep='first')
 weather_append['DATE'] = pd.to_datetime(weather_append['DATE'])
 weather_append['DATE'] = weather_append['DATE'].dt.date
@@ -239,7 +238,14 @@ weather_data_main = weather_sorted.copy()
 print("---------------")
 
 weather_data_main = weather_data_main.sort_values(['trail','DATE'])
-weather_data_main.to_csv("weather_data_main.csv")
+weather_data_main.to_csv("weather_data_main.csv", index=False)
+
+# Define the local and S3 filenames
+filename_local = 'weather_data_main.csv'
+filename_s3 = 'weather_data_main.csv'
+s3.upload_file(filename_local, bucket_name, filename_s3, ExtraArgs={'ACL': 'public-read'})
+print(f"File uploaded to S3: s3://{bucket_name}/{filename_s3}")
+
 ### ROLLING METRICS CALCULATED
 
 weather_data_hourly = weather_data_main[weather_data_main["HOUR"].notnull()]
@@ -529,7 +535,20 @@ def append_to_log(final_df):
     return log_df
 
 # Append the final_df to log
+
+# # TEMP NIGHTHAWK ADD 2024-08-17
+
+# # Find the row where Trail is 'Nighthawk Bike Park'
+# nighthawk_row = final_df[final_df['trail'] == 'Nighthawk Bike Park']
+# duplicated_row = nighthawk_row.copy()
+# duplicated_row['trail_status'] = 'LIKELY CLOSE'
+# duplicated_row['next_closest_trail_status'] = 'LIKELY WET/OPEN'
+# # Append the duplicated and modified row back to the DataFrame
+# final_df = pd.concat([final_df, duplicated_row], ignore_index=True)
+
 log_df = append_to_log(final_df[['trail', 'PRCP_4h', 'PRCP_8h', 'PRCP_16h', 'PRCP_24h', 'PRCP_48h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'PRCP_336h', 'trail_status', 'next_closest_trail_status', 'weighted_avg_score']]) #timestamp is created, not inputted
+
+
 
 ###
 # 2024-08-07 temp solution
