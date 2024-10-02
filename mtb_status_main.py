@@ -309,13 +309,13 @@ def adjust_prcp(prcp, tmax, dew_point, trail, prcp_336h):
     elif tmax > 85:
         prcp *= 1.0   
     elif tmax > 70:
-        prcp *= 1.0 
+        prcp *= 1.025 
     elif tmax <= 45:
-        prcp *= 1.3
+        prcp *= 1.25
     elif tmax <= 55:
-        prcp *= 1.2    
+        prcp *= 1.15    
     elif tmax <= 65:
-        prcp *= 1.1 
+        prcp *= 1.05 
 
     dew_point_temp_diff = tmax - dew_point
 
@@ -334,26 +334,28 @@ def adjust_prcp(prcp, tmax, dew_point, trail, prcp_336h):
         prcp *= 0.85
 
     ## If its been super dry past two weeks, adjust PRCP values
-    if prcp_336h > 10:
+    if prcp_336h > 12:
+        prcp *= 1.4
+    elif prcp_336h > 10:
+        prcp *= 1.3 
+    elif prcp_336h > 8.5:
         prcp *= 1.2
-    elif prcp_336h > 8:
-        prcp *= 1.1 
+    elif prcp_336h > 6.5:
+        prcp *= 1.1
     elif prcp_336h > 5:
         prcp *= 1.0 
     elif prcp_336h <= 5:
-        prcp *= 0.9
-    elif prcp_336h <= 4:
-        prcp *= 0.85   
+        prcp *= 0.95
     elif prcp_336h <= 2.5:
-        prcp *= 0.8
-    elif prcp_336h <= 1.5:
-        prcp *= 0.75
+        prcp *= 0.5
     
     # Apply trail adjustment if the trail is in the adjustment list
     if trail in trail_adjustments:
         prcp *= trail_adjustments[trail]
 
     return prcp
+
+
 
 
 status_scores = {
@@ -426,23 +428,23 @@ def trail_status(row):
 
             try:
                 if greater_than['prcp_4h'][status] <= prcp_values['prcp_4h'] <= less_than['prcp_4h'][status]:
-                    count += 0.5
+                    count += 0.4
                 if greater_than['prcp_8h'][status] <= prcp_values['prcp_8h'] <= less_than['prcp_8h'][status]:
-                    count += 0.35
+                    count += 0.3
                 if greater_than['prcp_16h'][status] <= prcp_values['prcp_16h'] <= less_than['prcp_16h'][status]:
-                    count += 0.15
+                    count += 0.2
                 if greater_than['prcp_24h'][status] <= prcp_values['prcp_24h'] <= less_than['prcp_24h'][status]:
-                    count += 1
+                    count += 0.75
                 if greater_than['prcp_48h'][status] <= prcp_values['prcp_48h'] <= less_than['prcp_48h'][status]:
-                    count += 1.5
+                    count += 1.20
                 if greater_than['prcp_72h'][status] <= prcp_values['prcp_72h'] <= less_than['prcp_72h'][status]:
-                    count += 1
+                    count += 1.10
                 if greater_than['prcp_120h'][status] <= prcp_values['prcp_120h'] <= less_than['prcp_120h'][status]:
-                    count += 0.75
+                    count += 1.00
                 if greater_than['prcp_168h'][status] <= prcp_values['prcp_168h'] <= less_than['prcp_168h'][status]:
-                    count += 0.75
+                    count += 0.90
                 if greater_than['prcp_336h'][status] <= prcp_values['prcp_336h'] <= less_than['prcp_336h'][status]:
-                    count += 0.25
+                    count += 0.80
             except KeyError as e:
                 print(f"KeyError: {e}. prcp_values: {prcp_values}")
 
@@ -558,7 +560,7 @@ log_df['PRCP_336h'] = log_df['PRCP_336h'].fillna(5) # 5 inches corresponds with 
 # To send full timestamp for QA purposes to Nathan at CORA
 log_df['timestamp_with_date'] = log_df['timestamp']
 
-print("LOG DF", log_df.head(50))
+print("LOG DF", log_df.sort_values('timestamp', ascending = False).head(50))
 #### VIEW LOG
 
 #### VIEW LOG
