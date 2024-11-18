@@ -300,8 +300,17 @@ url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sh
 df_gsheet_if_statements = pd.read_csv(url)
 print(df_gsheet_if_statements.head(10))
 
+sheet_id = '1IrZgmVjHmFkdxxM_65XzKW_nt8p8LCIHgkqtbjY4QJE'
+sheet_name = 'seasonal_adjustments'
+url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={sheet_name}'
+df_gsheet_seasonal_adjustments = pd.read_csv(url)
+print(df_gsheet_seasonal_adjustments.head(10))
+
 def adjust_prcp(prcp, tmax, dew_point, trail, prcp_336h):
-    # Adjust based on TMAX
+    current_month = datetime.now().month
+    prcp *= df_gsheet_seasonal_adjustments.loc[df_gsheet_seasonal_adjustments['month_date'] == current_month, 'prcp_adj_value'].values[0]
+    print("PRCP multipled by seasonal adjustment of: ", df_gsheet_seasonal_adjustments.loc[df_gsheet_seasonal_adjustments['month_date'] == current_month, 'prcp_adj_value'].values[0])
+
     if tmax > 95:
         prcp *= 0.90
     elif tmax > 90:
@@ -356,9 +365,8 @@ def adjust_prcp(prcp, tmax, dew_point, trail, prcp_336h):
     return prcp
 
 
-
-
 status_scores = {
+    'FREEZE/THAW': 6,     # Higher than DEFINITE CLOSE to indicate special override condition
     'DEFINITE CLOSE': 5,
     'LIKELY CLOSE': 4,
     'LIKELY WET/OPEN': 3,
@@ -395,6 +403,14 @@ def trail_status(row):
     dew_point_168h = row['DEW_POINT_168h']
     dew_point_336h = row['DEW_POINT_336h']
     trail = row['trail']
+
+    # Add freeze/thaw check here, before any other processing
+    if tmax_4h <= 0: ### temp make it really low for now
+        return pd.Series({
+            'trail_status': 'FREEZE/THAW', 
+            'next_closest_trail_status': 'DEFINITE CLOSE',
+            'weighted_avg_score': 6.0  # Higher than DEFINITE CLOSE
+        })
 
     # Adjust precipitation values
     prcp_4h = adjust_prcp(prcp_4h, tmax_4h, dew_point_4h, trail, prcp_336h)
@@ -457,7 +473,7 @@ def trail_status(row):
         # Doing this to make the algorithim more conservative and less prone towards creating DEFINITE Classifications
         # In other words, make the algorithim have to "fight" a bit more to make definite conclusions.
         # This will artificially bring down the weighted average scores, and make LIKELY WET/OPEN Classifications more common
-        df_status_counts.loc[df_status_counts['status'] == 'LIKELY WET/OPEN', 'count'] += 1.0
+        df_status_counts.loc[df_status_counts['status'] == 'LIKELY WET/OPEN', 'count'] += 1.5
         
         total_weighted_score = 0
         total_count = 0
@@ -497,7 +513,6 @@ def trail_status(row):
 # Applying the updated function to the DataFrame
 final_df[['trail_status', 'next_closest_trail_status', 'weighted_avg_score']] = final_df.apply(trail_status, axis=1)
 print(final_df[['trail', 'PRCP_24h', 'PRCP_8h', 'PRCP_48h', 'PRCP_16h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'PRCP_336h', 'TMAX_24h', 'DEW_POINT_24h', 'trail_status', 'next_closest_trail_status', 'weighted_avg_score']])
-
 
 # Initialize the S3 client
 s3_client = boto3.client('s3')
@@ -626,6 +641,7 @@ log_df_for_email['trail_status'] = log_df_for_email['trail_status'].map(status_m
 #####
 # Define the color mapping
 color_mapping = {
+    'FREEZE/THAW': 'skyblue',     # Added FREEZE/THAW with ice blue color
     'DEFINITE CLOSE': 'darkred',
     'LIKELY CLOSE': 'lightcoral',
     'LIKELY WET/OPEN': 'gold',
@@ -645,6 +661,7 @@ scatter = plt.scatter(log_df_visual['timestamp'], log_df_visual['trail'], c=log_
 
 # Create a legend
 legend_elements = [
+    plt.Line2D([0], [0], marker='s', color='w', label='FREEZE/THAW', markersize=20, markerfacecolor='skyblue'),    # Added FREEZE/THAW to legend
     plt.Line2D([0], [0], marker='s', color='w', label='DEFINITE CLOSE', markersize=20, markerfacecolor='darkred'),
     plt.Line2D([0], [0], marker='s', color='w', label='LIKELY CLOSE', markersize=20, markerfacecolor='lightcoral'),
     plt.Line2D([0], [0], marker='s', color='w', label='LIKELY WET/OPEN', markersize=20, markerfacecolor='gold'),
