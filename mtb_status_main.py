@@ -39,6 +39,8 @@ os.chdir(data_directory)
 
 # lookback_days_list = [2, 3, 4, 5, 6, 7, 11, 18]
 
+max_temp_freeze_thaw = 32
+
 s3_client = boto3.client('s3')
 s3 = boto3.client('s3')
 bucket_name = 'mtb-trail-condition-predictions'
@@ -188,6 +190,27 @@ hourly_accuweather = accuweather_data(df_trail_locations, accuweather_api_key)
 
 hourly_weather = update_hourly_weather_data(df_trail_locations, openweather_api_key)
 
+def calculate_freeze_thaw_points(temperature):
+    if temperature <= 27:
+        return 10/20
+    elif temperature <= 29:
+        return 5/20
+    elif temperature <= 30:
+        return 2.5/20
+    elif temperature <= max_temp_freeze_thaw: # this should be 32, adding as a variable just for dev/test purposes
+        return 120/20
+    elif temperature > max_temp_freeze_thaw: # use this negative as a helper for later function to cumulative sum
+        return -1
+    return 0
+
+print("LINE 204: hourly weather head", hourly_accuweather.head(5))
+hourly_accuweather['freeze_thaw_points'] = hourly_accuweather['MAX TEMPERATURE'].apply(calculate_freeze_thaw_points)
+
+if 'freeze_thaw_points' in hourly_accuweather.columns:
+    print("freeze_thaw_points exists")
+else:
+    assert False, "freeze_thaw_points column is missing"
+
 print("###########################")
 print("Accuweather")
 print(hourly_accuweather.head(5))
@@ -231,7 +254,8 @@ weather_sorted = weather_append.sort_values(by='DATE', ascending=False)
 weather_sorted.set_index('DATE', inplace=True)
 print("---------------")
 
-column_names = {'Trail': 'trail', 'DATE': 'DATE', 'MAX TEMPERATURE': 'TMAX', 'TOTAL PRECIPITATION': 'PRCP', 'DEW_POINT': 'DEW_POINT', 'PRECIPITATION PROBABILITY': 'PROB_ADJ'} # 'SNOW_FLAG': 'SNOW_FLAG'}
+column_names = {'Trail': 'trail', 'DATE': 'DATE', 'MAX TEMPERATURE': 'TMAX', 'TOTAL PRECIPITATION': 'PRCP', 
+'DEW_POINT': 'DEW_POINT', 'PRECIPITATION PROBABILITY': 'PROB_ADJ', 'freeze_thaw_points': 'freeze_thaw_points'} # 'SNOW_FLAG': 'SNOW_FLAG'}
 weather_sorted = weather_sorted.reset_index().rename(columns=column_names)
 print(weather_sorted.head(5))
 weather_data_main = weather_sorted.copy()
@@ -253,12 +277,19 @@ weather_data_hourly = weather_data_main[weather_data_main["HOUR"].notnull()]
 
 yesterday = pd.Timestamp.now().normalize() - pd.Timedelta(days=1)
 
-print("Hourly Data:\n", weather_data_hourly.sort_values(["trail", "DATE"], ascending = [False, False]).head(35))
+print("Hourly Data PRINT HEAD LINE 271:\n", weather_data_hourly.sort_values(["trail", "DATE"], ascending = [False, False]).head(15))
 lookback_hours_list = [4, 8, 16, 24, 48, 72, 96, 120, 144, 168, 336]
 
 # Assume weather_data_hourly and weather_data_daily are already defined
 # daily_df = calculate_rolling_metrics_daily(weather_data_daily, lookback_days_list)
+
+
 hourly_df = calculate_rolling_metrics_hourly(weather_data_hourly, lookback_hours_list)
+
+if 'freeze_thaw_points_cumulative' in hourly_df.columns:
+    print("freeze_thaw_points_cumulative exists")
+else:
+    assert False, "freeze_thaw_points_cumulative column is missing"
 
 # daily_df_trim = daily_df.groupby('trail', as_index=False).apply(lambda x: x.loc[x['DATE'].idxmax()]).reset_index(drop=True)
 # daily_df_trim = daily_df.sort_values(by='DATE', ascending=False).drop_duplicates(subset = 'trail').reset_index(drop=True)
@@ -277,7 +308,8 @@ df_class = final_df[['trail',
                      'TMAX_24h', 'TMAX_48h', 'TMAX_72h', 'TMAX_120h', 'TMAX_168h', 'TMAX_336h', 
                      'TMAX_4h', 'TMAX_8h', 'TMAX_16h',
                      'DEW_POINT_24h', 'DEW_POINT_48h', 'DEW_POINT_72h', 'DEW_POINT_120h', 'DEW_POINT_168h', 'DEW_POINT_336h',
-                     'DEW_POINT_4h', 'DEW_POINT_8h', 'DEW_POINT_16h'
+                     'DEW_POINT_4h', 'DEW_POINT_8h', 'DEW_POINT_16h',
+                     'freeze_thaw_points', 'freeze_thaw_points_cumulative'
                      ]]
 
 
@@ -300,27 +332,20 @@ url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sh
 df_gsheet_if_statements = pd.read_csv(url)
 print(df_gsheet_if_statements.head(10))
 
-sheet_id = '1IrZgmVjHmFkdxxM_65XzKW_nt8p8LCIHgkqtbjY4QJE'
-sheet_name = 'seasonal_adjustments'
-url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={sheet_name}'
-df_gsheet_seasonal_adjustments = pd.read_csv(url)
-print(df_gsheet_seasonal_adjustments.head(10))
-
 def adjust_prcp(prcp, tmax, dew_point, trail, prcp_336h):
-    current_month = datetime.now().month
-    prcp *= df_gsheet_seasonal_adjustments.loc[df_gsheet_seasonal_adjustments['month_date'] == current_month, 'prcp_adj_value'].values[0]
-    print("PRCP multipled by seasonal adjustment of: ", df_gsheet_seasonal_adjustments.loc[df_gsheet_seasonal_adjustments['month_date'] == current_month, 'prcp_adj_value'].values[0])
-
+    # Adjust based on TMAX
     if tmax > 95:
         prcp *= 0.90
     elif tmax > 90:
         prcp *= 0.95   
     elif tmax > 85:
-        prcp *= 1.0   
+        prcp *= 1   
     elif tmax > 70:
-        prcp *= 1.025 
+        prcp *= 1 
+    elif tmax <= 38:
+        prcp *= 1.5
     elif tmax <= 45:
-        prcp *= 1.25
+        prcp *= 1.35
     elif tmax <= 55:
         prcp *= 1.15    
     elif tmax <= 65:
@@ -365,8 +390,9 @@ def adjust_prcp(prcp, tmax, dew_point, trail, prcp_336h):
     return prcp
 
 
+
+
 status_scores = {
-    'FREEZE/THAW': 6,     # Higher than DEFINITE CLOSE to indicate special override condition
     'DEFINITE CLOSE': 5,
     'LIKELY CLOSE': 4,
     'LIKELY WET/OPEN': 3,
@@ -375,6 +401,17 @@ status_scores = {
 }
 
 def trail_status(row):
+    print(f"\nTrail: {row['trail']}")
+    print(f"Freeze/thaw points: {row['freeze_thaw_points']}")
+    print(f"Cumulative freeze/thaw points: {row['freeze_thaw_points_cumulative']}")
+    
+    if row['freeze_thaw_points_cumulative'] >= 1:  # 1 represents 20/20 points
+        print(f"FREEZE/THAW condition met for {row['trail']} with {row['freeze_thaw_points_cumulative']} points")
+        return pd.Series({
+            'trail_status': 'FREEZE/THAW', 
+            'next_closest_trail_status': 'LIKELY CLOSE', 
+            'weighted_avg_score': 999
+        })
     prcp_4h = row['PRCP_4h']
     prcp_8h = row['PRCP_8h']
     prcp_16h = row['PRCP_16h']
@@ -403,14 +440,6 @@ def trail_status(row):
     dew_point_168h = row['DEW_POINT_168h']
     dew_point_336h = row['DEW_POINT_336h']
     trail = row['trail']
-
-    # Add freeze/thaw check here, before any other processing
-    if tmax_4h <= 0: ### temp make it really low for now
-        return pd.Series({
-            'trail_status': 'FREEZE/THAW', 
-            'next_closest_trail_status': 'DEFINITE CLOSE',
-            'weighted_avg_score': 6.0  # Higher than DEFINITE CLOSE
-        })
 
     # Adjust precipitation values
     prcp_4h = adjust_prcp(prcp_4h, tmax_4h, dew_point_4h, trail, prcp_336h)
@@ -473,7 +502,7 @@ def trail_status(row):
         # Doing this to make the algorithim more conservative and less prone towards creating DEFINITE Classifications
         # In other words, make the algorithim have to "fight" a bit more to make definite conclusions.
         # This will artificially bring down the weighted average scores, and make LIKELY WET/OPEN Classifications more common
-        df_status_counts.loc[df_status_counts['status'] == 'LIKELY WET/OPEN', 'count'] += 1.5
+        df_status_counts.loc[df_status_counts['status'] == 'LIKELY WET/OPEN', 'count'] += 1.0
         
         total_weighted_score = 0
         total_count = 0
@@ -513,6 +542,7 @@ def trail_status(row):
 # Applying the updated function to the DataFrame
 final_df[['trail_status', 'next_closest_trail_status', 'weighted_avg_score']] = final_df.apply(trail_status, axis=1)
 print(final_df[['trail', 'PRCP_24h', 'PRCP_8h', 'PRCP_48h', 'PRCP_16h', 'PRCP_72h', 'PRCP_120h', 'PRCP_168h', 'PRCP_336h', 'TMAX_24h', 'DEW_POINT_24h', 'trail_status', 'next_closest_trail_status', 'weighted_avg_score']])
+
 
 # Initialize the S3 client
 s3_client = boto3.client('s3')
@@ -641,7 +671,7 @@ log_df_for_email['trail_status'] = log_df_for_email['trail_status'].map(status_m
 #####
 # Define the color mapping
 color_mapping = {
-    'FREEZE/THAW': 'skyblue',     # Added FREEZE/THAW with ice blue color
+    'FREEZE/THAW': 'skyblue',
     'DEFINITE CLOSE': 'darkred',
     'LIKELY CLOSE': 'lightcoral',
     'LIKELY WET/OPEN': 'gold',
@@ -661,7 +691,7 @@ scatter = plt.scatter(log_df_visual['timestamp'], log_df_visual['trail'], c=log_
 
 # Create a legend
 legend_elements = [
-    plt.Line2D([0], [0], marker='s', color='w', label='FREEZE/THAW', markersize=20, markerfacecolor='skyblue'),    # Added FREEZE/THAW to legend
+    plt.Line2D([0], [0], marker='s', color='w', label='FREEZE/THAW', markersize=20, markerfacecolor='skyblue'),
     plt.Line2D([0], [0], marker='s', color='w', label='DEFINITE CLOSE', markersize=20, markerfacecolor='darkred'),
     plt.Line2D([0], [0], marker='s', color='w', label='LIKELY CLOSE', markersize=20, markerfacecolor='lightcoral'),
     plt.Line2D([0], [0], marker='s', color='w', label='LIKELY WET/OPEN', markersize=20, markerfacecolor='gold'),
@@ -788,7 +818,7 @@ print("Trail Status JSON sent to S3")
 
 # Check if the current hour is 8, 12, or 16 (4 PM)
 current_hour = datetime.now().hour
-if current_hour in [8,16]:
+if current_hour in [8,16, 14, 15]:
 
     import smtplib
     from email.mime.multipart import MIMEMultipart

@@ -22,7 +22,7 @@ def fetch_historical_weather_data(pickle_file, df_trail_locations, api_key):
             trail = row['Trail']
             data = []
             # Loop through last X days
-            for i in range(1, 10):
+            for i in range(1, 15):
                 date_var = (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d')
                 response = get_weather_data(lat, lon, date_var, api_key)
                 try:
@@ -179,7 +179,6 @@ def calculate_rolling_metrics_daily(daily_df, lookback_days_list):
 
     daily_df.fillna(0, inplace=True)
     return daily_df
-
 def calculate_rolling_metrics_hourly(hourly_df, lookback_hours_list):
     """
     Calculates rolling sums and averages for specified columns over a range of lookback hours for hourly data.
@@ -207,6 +206,36 @@ def calculate_rolling_metrics_hourly(hourly_df, lookback_hours_list):
                     hourly_df[new_col_name] = hourly_df[col].rolling(window=i, min_periods=1).mean()
                 else:  
                     hourly_df[new_col_name] = hourly_df[col].rolling(window=i, min_periods=1).max()
+                    
+    def calculate_freeze_thaw_points(group):
+        max_lookback = 12  # Maximum hours to look back
+        
+        # Create a new series to store cumulative points for each row
+        cumulative_points = []
+        
+        # Convert to numpy array for easier slicing
+        points_array = group['freeze_thaw_points'].to_numpy()
+        
+        # Iterate through each row in the group
+        for i in range(len(group)):
+            # Get points for current row and up to max_lookback previous rows
+            points_window = points_array[max(0, i-max_lookback+1):i+1]
+            
+            # Calculate cumulative points until we hit a negative value
+            total_points = 0
+            for point in reversed(points_window):
+                if point < 0:
+                    break
+                total_points += point
+            
+            cumulative_points.append(total_points)
+        
+        return pd.Series(cumulative_points, index=group.index)
+    
+    # Apply calculation to each trail group
+    hourly_df['freeze_thaw_points_cumulative'] = hourly_df.groupby('trail', group_keys=False).apply(
+        lambda x: calculate_freeze_thaw_points(x)
+    )
 
     hourly_df.fillna(0, inplace=True)
     return hourly_df
