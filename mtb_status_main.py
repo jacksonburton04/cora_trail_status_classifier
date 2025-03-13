@@ -815,11 +815,8 @@ print("Trail Status JSON sent to S3")
 # EMAIL
 #######
 
-
-# Check if the current hour is 8, 12, or 16 (4 PM)
 current_hour = datetime.now().hour
-if current_hour in [8,16, 14, 15]:
-
+if current_hour in [1000000]: # purposefully disabling this for now
     import smtplib
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
